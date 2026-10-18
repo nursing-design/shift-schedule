@@ -1,0 +1,2405 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>看護師勤務表作成アプリ - Smart Nurse Roster Pro</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Vue 3 (Multi-CDN High Reliability Fallback) -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"></script>
+    <script>
+        if (!window.Vue) {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.js"><\/script>');
+        }
+    </script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #f1f5f9;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        /* Responsive Fixed Header Columns */
+        .sticky-col-idx { position: sticky; left: 0px; z-index: 15; width: 34px; min-width: 34px; }
+        .sticky-col-name { position: sticky; left: 34px; z-index: 15; width: 105px; min-width: 105px; }
+        .sticky-col-team { position: sticky; left: 139px; z-index: 15; width: 30px; min-width: 30px; }
+        .sticky-col-role { position: sticky; left: 169px; z-index: 15; width: 84px; min-width: 84px; }
+
+        @media (max-width: 640px) {
+            .sticky-col-idx { width: 28px; min-width: 28px; }
+            .sticky-col-name { left: 28px; width: 88px; min-width: 88px; }
+            .sticky-col-team { left: 116px; width: 26px; min-width: 26px; }
+            .sticky-col-role { left: 142px; width: 72px; min-width: 72px; }
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(-6px); }
+
+        [v-cloak] { display: none !important; }
+
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; font-size: 8.5pt; }
+            .print-full { width: 100% !important; max-width: none !important; box-shadow: none !important; border: none !important; overflow: visible !important; }
+            .portal-tooltip { display: none !important; }
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+    <div id="app" v-cloak class="flex-1 flex flex-col min-h-screen" @click="closeDropdowns" @mouseup="stopPaint" @touchend="stopPaint">
+        
+        <!-- Toast Notification Message -->
+        <transition name="fade">
+            <div v-if="notificationMessage" class="fixed top-4 right-4 left-4 sm:left-auto sm:w-96 z-50 bg-slate-900/95 text-white px-4 py-3 rounded-xl shadow-2xl text-xs sm:text-sm font-semibold flex items-center justify-between border border-slate-700 backdrop-blur">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+                    <span>{{ notificationMessage }}</span>
+                </div>
+                <button @click="notificationMessage = ''" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </transition>
+
+        <!-- Custom Confirmation Modal for Clear Actions -->
+        <transition name="fade">
+            <div v-if="confirmDialog.show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm no-print">
+                <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 max-w-sm w-full space-y-4" @click.stop>
+                    <div class="flex items-center space-x-3 text-rose-600">
+                        <div class="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center shrink-0">
+                            <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-extrabold text-slate-800 text-sm sm:text-base">{{ confirmDialog.title }}</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">{{ confirmDialog.message }}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                        <button @click="confirmDialog.show = false" class="px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition">キャンセル</button>
+                        <button @click="executeConfirmAction" class="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-md transition">全消去を実行</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Global Portal Floating Tooltip for Paid Leave (Top Layer Fixed Position) -->
+        <transition name="fade">
+            <div v-if="hoverTooltip.show && hoverTooltip.staff" :style="{ left: hoverTooltip.x + 'px', top: hoverTooltip.y + 'px' }" class="portal-tooltip fixed z-[9999] w-64 bg-slate-900 text-white text-xs rounded-xl shadow-2xl p-3 border border-slate-700 pointer-events-none no-print">
+                <div class="absolute -left-1.5 top-3.5 w-3 h-3 bg-slate-900 border-l border-t border-slate-700 transform -rotate-45"></div>
+                <div class="relative z-10 space-y-2">
+                    <div class="border-b border-slate-700 pb-1.5 flex items-center justify-between">
+                        <span class="font-extrabold flex items-center"><i class="fa-solid fa-umbrella-beach text-sky-400 mr-1.5"></i>{{ hoverTooltip.staff.name }}</span>
+                        <span class="text-[10px] bg-sky-950 text-sky-300 px-1.5 py-0.5 rounded border border-sky-800">{{ getTargetFiscalYear(currentYear, currentMonth) }}年度</span>
+                    </div>
+                    <div class="space-y-1 text-[11px]">
+                        <div class="flex justify-between text-slate-300">
+                            <span>4月1日可能年休:</span>
+                            <span class="font-bold text-white">{{ hoverTooltip.staff.initialLeaveDays ?? 20 }}日</span>
+                        </div>
+                        <div class="flex justify-between text-slate-300">
+                            <span>前月末までの消化済:</span>
+                            <span class="font-bold text-amber-300">-{{ getPriorUsedLeaveDays(hoverTooltip.staff.id, currentYear, currentMonth) }}日</span>
+                        </div>
+                        <div class="border-t border-slate-700/80 pt-1 flex justify-between items-center text-xs">
+                            <span class="font-bold text-sky-300">{{ currentMonth }}月開始時点の残日数:</span>
+                            <span class="font-black text-sm" :class="getStaffLeaveInfo(hoverTooltip.staff, currentYear, currentMonth).remaining < 5 ? 'text-rose-400' : 'text-emerald-400'">
+                                {{ getStaffLeaveInfo(hoverTooltip.staff, currentYear, currentMonth).remaining }}日
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <header class="bg-indigo-950 text-white shadow-md sticky top-0 z-40 no-print border-b border-indigo-900">
+            <div class="max-w-[1700px] mx-auto px-3 py-2 sm:px-4 sm:py-2.5 flex flex-wrap items-center justify-between gap-2.5">
+                <div class="flex items-center space-x-2.5">
+                    <div class="bg-gradient-to-tr from-indigo-600 to-indigo-500 p-2 rounded-xl shadow-inner shrink-0">
+                        <i class="fa-solid fa-user-nurse text-lg sm:text-xl text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-extrabold text-sm sm:text-base leading-tight tracking-wide flex items-center gap-1.5">
+                            看護師勤務表作成
+                            <span class="text-[10px] bg-indigo-800 text-indigo-200 px-1.5 py-0.5 rounded font-medium">Pro</span>
+                        </h1>
+                        <p class="text-[10px] text-indigo-300 hidden sm:block">年休残日数管理・希望反映・ルールチェック・ドラッグ入力</p>
+                    </div>
+                </div>
+
+                <nav class="flex items-center bg-indigo-900/80 p-1 rounded-xl border border-indigo-800/80 text-xs font-semibold max-w-full space-x-0.5 shadow-inner">
+                    <button @click="activeTab = 'main'" :class="activeTab === 'main' ? 'bg-indigo-600 text-white shadow' : 'text-indigo-200 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center">
+                        <i class="fa-solid fa-table-cells mr-1.5"></i>勤務表
+                    </button>
+                    <button @click="activeTab = 'requests'" :class="activeTab === 'requests' ? 'bg-indigo-600 text-white shadow' : 'text-indigo-200 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center">
+                        <i class="fa-solid fa-calendar-check mr-1.5"></i>希望入力
+                    </button>
+                    <button @click="activeTab = 'dailyStaff'" :class="activeTab === 'dailyStaff' ? 'bg-indigo-600 text-white shadow' : 'text-indigo-200 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center">
+                        <i class="fa-solid fa-list-check mr-1.5"></i>勤務者確認
+                    </button>
+                    <button @click="activeTab = 'fiscalSummary'" :class="activeTab === 'fiscalSummary' ? 'bg-indigo-600 text-white shadow' : 'text-indigo-200 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center">
+                        <i class="fa-solid fa-chart-column mr-1.5"></i>年度集計
+                    </button>
+
+                    <!-- Settings Dropdown -->
+                    <div class="relative" @click.stop>
+                        <button @click="toggleSettingsDropdown" :class="['autoGenConfig', 'staff', 'rules', 'settings'].includes(activeTab) ? 'bg-indigo-600 text-white shadow' : 'text-indigo-200 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center">
+                            <i class="fa-solid fa-sliders mr-1.5"></i>各種設定 <i class="fa-solid fa-chevron-down text-[10px] ml-1 transition-transform" :class="{ 'rotate-180': isSettingsDropdownOpen }"></i>
+                        </button>
+                        <transition name="fade">
+                            <div v-if="isSettingsDropdownOpen" class="absolute left-0 mt-1.5 w-52 bg-slate-900 border border-indigo-700/80 rounded-xl shadow-2xl py-1 z-50 text-xs">
+                                <button @click="selectTabFromMenu('staff')" :class="activeTab === 'staff' ? 'bg-indigo-700 text-white font-bold' : 'text-slate-200 hover:bg-indigo-950'" class="w-full text-left px-3.5 py-2 flex items-center transition">
+                                    <i class="fa-solid fa-users w-4 mr-2 text-sky-400"></i>スタッフ設定
+                                </button>
+                                <button @click="selectTabFromMenu('settings')" :class="activeTab === 'settings' ? 'bg-indigo-700 text-white font-bold' : 'text-slate-200 hover:bg-indigo-950'" class="w-full text-left px-3.5 py-2 flex items-center transition">
+                                    <i class="fa-solid fa-gear w-4 mr-2 text-amber-400"></i>勤務設定
+                                </button>
+                                <button @click="selectTabFromMenu('rules')" :class="activeTab === 'rules' ? 'bg-indigo-700 text-white font-bold' : 'text-slate-200 hover:bg-indigo-950'" class="w-full text-left px-3.5 py-2 flex items-center transition">
+                                    <i class="fa-solid fa-triangle-exclamation w-4 mr-2 text-rose-400"></i>勤務ルール
+                                </button>
+                                <button @click="selectTabFromMenu('autoGenConfig')" :class="activeTab === 'autoGenConfig' ? 'bg-indigo-700 text-white font-bold' : 'text-slate-200 hover:bg-indigo-950'" class="w-full text-left px-3.5 py-2 flex items-center transition">
+                                    <i class="fa-solid fa-brain w-4 mr-2 text-emerald-400"></i>自動生成設定
+                                </button>
+                            </div>
+                        </transition>
+                    </div>
+                    <button @click="activeTab = 'help'" :class="activeTab === 'help' ? 'bg-indigo-600 text-white shadow' : 'text-indigo-200 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center">
+                        <i class="fa-solid fa-circle-question mr-1.5"></i>ヘルプ
+                    </button>
+                </nav>
+
+                <div class="flex items-center space-x-1.5 text-xs w-full sm:w-auto justify-between sm:justify-end pt-1.5 sm:pt-0">
+                    <div class="flex items-center bg-indigo-900 border border-indigo-700 rounded-lg px-2.5 py-1">
+                        <span class="text-indigo-300 mr-1.5 text-[11px]"><i class="fa-solid fa-hospital"></i> 病棟:</span>
+                        <input type="text" v-model="currentRoomId" @change="onRoomChanged" class="bg-transparent text-white font-bold w-16 sm:w-20 outline-none text-xs" placeholder="A病棟">
+                    </div>
+                    <div class="flex items-center space-x-1">
+                        <button @click="manualSave" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold transition flex items-center shadow-sm text-xs"><i class="fa-solid fa-floppy-disk mr-1"></i>保存</button>
+                        <button @click="exportData" class="px-2 py-1 bg-indigo-800 hover:bg-indigo-700 text-indigo-100 rounded-lg text-xs transition flex items-center"><i class="fa-solid fa-download mr-1"></i>JSON</button>
+                        <label class="px-2 py-1 bg-indigo-800 hover:bg-indigo-700 text-indigo-100 rounded-lg text-xs transition flex items-center cursor-pointer"><i class="fa-solid fa-upload mr-1"></i>読込<input type="file" @change="importData" accept=".json" class="hidden"></label>
+                        <button @click="resetToDefaultData" class="px-2 py-1 bg-rose-900/80 hover:bg-rose-800 text-rose-200 rounded-lg text-xs transition flex items-center" title="ブラウザの保存データをリセット"><i class="fa-solid fa-rotate-left"></i></button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 max-w-[1700px] w-full mx-auto p-2 sm:p-4 flex flex-col">
+            
+            <!-- ================= TAB 1: MAIN ROSTER ================= -->
+            <div v-show="activeTab === 'main'" class="flex-1 flex flex-col space-y-2.5">
+                <div class="bg-white p-2.5 rounded-xl shadow-sm border border-slate-200 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 no-print">
+                    
+                    <div class="flex flex-wrap items-center justify-between sm:justify-start gap-2">
+                        <div class="flex items-center space-x-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                            <button @click="changeMonth(-1)" class="p-1.5 sm:p-2 rounded-lg hover:bg-slate-200 text-slate-700 transition"><i class="fa-solid fa-chevron-left text-xs"></i></button>
+                            <div class="text-sm sm:text-base font-bold text-slate-800 min-w-[120px] text-center">{{ currentYear }}年 {{ currentMonth }}月</div>
+                            <button @click="changeMonth(1)" class="p-1.5 sm:p-2 rounded-lg hover:bg-slate-200 text-slate-700 transition"><i class="fa-solid fa-chevron-right text-xs"></i></button>
+                        </div>
+                        <div class="flex items-center flex-wrap gap-1.5">
+                            <button @click="isRuleCheckActive = !isRuleCheckActive" :class="isRuleCheckActive ? 'bg-fuchsia-600 text-white shadow ring-2 ring-fuchsia-300' : 'bg-slate-100 text-slate-700 border border-slate-300'" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center">
+                                <i class="fa-solid fa-clipboard-check mr-1 text-xs"></i>ルールチェック
+                                <span v-if="violationCount > 0" class="ml-1 bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-black animate-pulse">{{ violationCount }}</span>
+                            </button>
+                            <button @click="syncRequestsToRoster" class="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-sm transition flex items-center"><i class="fa-solid fa-wand-magic-sparkles mr-1 text-xs"></i>希望反映</button>
+                            <button @click="autoGenerateSchedule" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition flex items-center" title="ガイドラインと設定に基づき自動作成"><i class="fa-solid fa-brain mr-1 text-xs"></i>自動生成</button>
+                            <button @click="activeTab = 'autoGenConfig'" class="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition flex items-center" title="自動生成の詳細条件を設定"><i class="fa-solid fa-sliders"></i></button>
+                            <button @click="printRoster" class="hidden sm:flex px-2.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-sm transition items-center"><i class="fa-solid fa-print mr-1 text-xs"></i>印刷</button>
+                            <button @click="askClearRoster" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold transition border border-rose-300 flex items-center"><i class="fa-solid fa-trash-can mr-1"></i>勤務全消去</button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200 overflow-x-auto touch-pan-x">
+                        <span class="text-xs font-bold text-slate-500 mr-1 shrink-0 flex items-center"><i class="fa-solid fa-stamp text-indigo-500 mr-1"></i>スタンプ:</span>
+                        <button v-for="sym in symbols" :key="sym.id" @click="selectSymbol(sym.code)" :style="{ backgroundColor: sym.bg, color: sym.text }" :class="selectedSymbol === sym.code ? 'ring-2 ring-indigo-600 scale-105 font-black shadow-md' : 'opacity-85 hover:opacity-100'" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition border border-slate-300 shrink-0 min-w-[36px] text-center">{{ sym.code }}</button>
+                        <button @click="selectSymbol('＜＞')" :class="selectedSymbol === '＜＞' ? 'ring-2 ring-indigo-600 scale-105 font-black bg-indigo-700 text-white' : 'bg-indigo-50 text-indigo-800 border border-indigo-300'" class="px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 flex items-center"><i class="fa-solid fa-moon mr-1"></i>＜＞ 入り・明け</button>
+                        <button @click="selectSymbol('')" :class="selectedSymbol === '' ? 'ring-2 ring-indigo-600 bg-slate-800 text-white' : 'bg-slate-200 text-slate-600'" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0">消去</button>
+                        
+                        <!-- Drag Paint Mode Toggle (Default OFF for safety) -->
+                        <button @click="isPaintModeEnabled = !isPaintModeEnabled" :class="isPaintModeEnabled ? 'bg-amber-500 text-white ring-2 ring-amber-300 shadow font-black' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 flex items-center ml-1" title="ONにするとドラッグで連続入力可能">
+                            <i class="fa-solid fa-paintbrush mr-1"></i>なぞり: {{ isPaintModeEnabled ? 'ON' : 'OFF' }}
+                        </button>
+                        <button @click="showFloatingStamp = !showFloatingStamp" :class="showFloatingStamp ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 flex items-center ml-0.5"><i class="fa-solid fa-up-down-left-right mr-1"></i>フロート</button>
+                    </div>
+                </div>
+
+                <!-- Floating Draggable Stamp Box -->
+                <div v-if="showFloatingStamp" :style="{ left: floatingPos.x + 'px', top: floatingPos.y + 'px' }" class="fixed z-50 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-indigo-200 p-2.5 w-64 select-none touch-none no-print">
+                    <div @mousedown="startDrag" @touchstart="startDrag" class="bg-indigo-950 text-white px-2.5 py-1.5 rounded-xl cursor-move flex items-center justify-between text-xs font-bold mb-2 shadow-inner">
+                        <div class="flex items-center space-x-1.5"><i class="fa-solid fa-grip-vertical text-indigo-400"></i><span>スタンプ</span></div>
+                        <div class="flex items-center space-x-1">
+                            <button @click.stop="isPaintModeEnabled = !isPaintModeEnabled" :class="isPaintModeEnabled ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-300'" class="text-[10px] px-1.5 py-0.5 rounded font-bold">
+                                なぞり: {{ isPaintModeEnabled ? 'ON' : 'OFF' }}
+                            </button>
+                            <button @click="showFloatingStamp = false" class="hover:text-rose-300 p-0.5 ml-1"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1.5 p-0.5">
+                        <button v-for="sym in symbols" :key="'f-'+sym.id" @click="selectSymbol(sym.code)" :style="{ backgroundColor: sym.bg, color: sym.text }" :class="selectedSymbol === sym.code ? 'ring-2 ring-indigo-600 scale-105 font-black shadow-md' : 'opacity-85 hover:opacity-100'" class="py-1.5 rounded-lg text-xs font-bold transition border border-slate-300">{{ sym.code }}</button>
+                        <button @click="selectSymbol('＜＞')" :class="selectedSymbol === '＜＞' ? 'ring-2 ring-indigo-600 scale-105 bg-indigo-700 text-white' : 'bg-indigo-50 text-indigo-800 border border-indigo-300'" class="py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center col-span-4 mt-1"><i class="fa-solid fa-moon mr-1"></i>＜＞ 入り・明け(2日)</button>
+                        <button @click="selectSymbol('')" :class="selectedSymbol === '' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-700'" class="py-1.5 rounded-lg text-xs font-bold transition col-span-4 mt-0.5">選択解除 (消去モード)</button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col print-full">
+                    <div class="overflow-x-auto flex-1 relative touch-pan-x">
+                        <table class="w-full border-separate border-spacing-0 text-center text-xs">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 font-bold">
+                                    <th class="sticky top-0 sticky-col-idx z-30 bg-slate-200 border-b border-r border-slate-300 p-1 font-mono text-slate-500">No.</th>
+                                    <th class="sticky top-0 sticky-col-name z-30 bg-slate-200 border-b border-r border-slate-300 p-1 text-left">氏名<span class="text-[9px] text-slate-500 block font-normal">ホバーで年休</span></th>
+                                    <th class="sticky top-0 sticky-col-team z-30 bg-slate-200 border-b border-r border-slate-300 p-1 text-center">●</th>
+                                    <th class="sticky top-0 sticky-col-role z-30 bg-slate-200 border-b border-r border-slate-300 p-1 text-left">役職</th>
+                                    <th v-for="d in daysInMonth" :key="'h-'+d.dateStr" :class="[d.isCurrentMonth?'':'bg-slate-100/70 text-slate-400 opacity-60', d.dayOfWeek===0||d.isHoliday?'text-rose-600 bg-rose-50/60':(d.dayOfWeek===6?'text-sky-600 bg-sky-50/60':''), d.is4WeekThick?'border-r-2 border-r-slate-800':'border-r border-slate-200']" class="sticky top-0 z-20 border-b border-slate-300 p-1 min-w-[32px] max-w-[32px]">
+                                        <div class="text-[9px] font-mono">{{ d.monthNum }}/{{ d.dayNum }}</div>
+                                        <div class="font-bold flex items-center justify-center text-[11px]">{{ d.dayName }}<span v-if="d.isHoliday" class="text-[8px] bg-rose-500 text-white rounded px-0.5 ml-0.5">祝</span></div>
+                                    </th>
+                                    <th class="sticky top-0 z-20 bg-amber-100/80 border-b border-l-2 border-r border-slate-300 p-1 min-w-[28px] text-amber-950">‥</th>
+                                    <th class="sticky top-0 z-20 bg-amber-100/80 border-b border-r border-slate-300 p-1 min-w-[28px] text-amber-950">中</th>
+                                    <th class="sticky top-0 z-20 bg-indigo-100/80 border-b border-r border-slate-300 p-1 min-w-[28px] text-indigo-950">＜</th>
+                                    <th class="sticky top-0 z-20 bg-emerald-100/80 border-b border-r border-slate-300 p-1 min-w-[28px] text-emerald-950">○</th>
+                                    <th class="sticky top-0 z-20 bg-sky-100/80 border-b border-r border-slate-300 p-1 min-w-[28px] text-sky-950">年</th>
+                                    <th class="sticky top-0 z-20 bg-purple-100/80 border-b border-r border-slate-300 p-1 min-w-[28px] text-purple-950">◎</th>
+                                    <th class="sticky top-0 z-20 bg-blue-100/80 border-b border-r border-slate-300 p-1 min-w-[28px] text-blue-950">委</th>
+                                    <th class="sticky top-0 z-20 bg-teal-100/80 border-b border-r border-slate-300 p-1 min-w-[28px] text-teal-950">研</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                <tr v-for="(staff, idx) in staffList" :key="'tr-'+staff.id" class="hover:bg-slate-50/80 transition-colors">
+                                    <td class="sticky-col-idx bg-white border-b border-r border-slate-200 p-1 text-slate-400 font-mono text-[10px] align-middle">{{ idx + 1 }}</td>
+                                    <td class="sticky-col-name bg-white border-b border-r border-slate-200 p-1 font-bold text-slate-800 text-left align-middle cursor-help" @mouseenter="showStaffTooltip($event, staff)" @mouseleave="hideStaffTooltip">
+                                        <div class="truncate text-xs flex justify-between items-center"><span>{{ staff.name }}</span><i class="fa-solid fa-circle-question text-[10px] text-slate-300"></i></div>
+                                    </td>
+                                    <td class="sticky-col-team bg-white border-b border-r border-slate-200 p-0.5 text-center align-middle"><span class="w-3.5 h-3.5 rounded-full inline-block border border-black/10" :style="{ backgroundColor: getTeamColor(staff.teamName).dot }"></span></td>
+                                    <td class="sticky-col-role bg-white border-b border-r border-slate-200 p-0.5 text-slate-600 text-left align-middle"><span class="text-[10px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200 block text-center truncate">{{ staff.role }}</span></td>
+                                    
+                                    <td v-for="d in daysInMonth" :key="'c-'+staff.id+'-'+d.dateStr"
+                                        @mousedown="startPaint($event, staff.id, d.dateStr)" @mouseenter="onCellMouseEnter($event, staff.id, d.dateStr)" @click="cellClicked(staff.id, d.dateStr)" @dblclick="cellDblClicked(staff.id, d.dateStr)"
+                                        :class="[d.isCurrentMonth ? 'cursor-pointer hover:ring-2 hover:ring-indigo-400' : 'bg-slate-100/50 opacity-60', d.is4WeekThick ? 'border-r-2 border-r-slate-800' : 'border-r border-slate-200', isRuleCheckActive && ruleViolations[staff.id]?.[d.dateStr] ? 'bg-fuchsia-100 ring-2 ring-fuchsia-600 font-bold z-10 relative' : '', isMismatch(staff.id, d.dateStr) ? 'bg-rose-100 ring-2 ring-rose-500 font-bold z-10 relative' : '']"
+                                        class="p-0.5 border-b align-middle select-none min-w-[32px] max-w-[32px] h-[34px] relative">
+                                        <div v-if="getRosterSymbol(staff.id, d.dateStr)" :style="getSymbolStyle(getRosterSymbol(staff.id, d.dateStr))" class="w-full h-full rounded flex items-center justify-center font-bold text-xs shadow-sm active:scale-95 pointer-events-none">{{ getRosterSymbol(staff.id, d.dateStr) }}</div>
+                                        <div v-else-if="getRequestSymbol(staff.id, d.dateStr)" class="w-full h-full rounded border border-dashed border-amber-400 bg-amber-50/70 flex items-center justify-center text-[10px] font-bold text-amber-800 pointer-events-none">{{ getRequestSymbol(staff.id, d.dateStr) }}</div>
+                                        <div v-if="getRosterSymbol(staff.id, d.dateStr) && getRequestSymbol(staff.id, d.dateStr)" class="absolute -top-1 -right-1 text-[7px] px-1 rounded-full font-extrabold shadow-md z-20 border border-white pointer-events-none" :class="isMismatch(staff.id, d.dateStr) ? 'bg-rose-600 text-white ring-2 ring-rose-400 animate-pulse' : 'bg-emerald-600 text-white'"><span>希:{{ getRequestSymbol(staff.id, d.dateStr) }}</span></div>
+                                    </td>
+                                    
+                                    <td class="border-b border-l-2 border-r border-slate-200 bg-amber-50/40 font-bold text-amber-950 p-0.5 align-middle text-[11px]">{{ getStaffCategoryCount(staff.id, 'day') }}</td>
+                                    <td class="border-b border-r border-slate-200 bg-amber-50/40 font-bold text-amber-950 p-0.5 align-middle text-[11px]">{{ getStaffCategoryCount(staff.id, 'mid') }}</td>
+                                    <td class="border-b border-r border-slate-200 bg-indigo-50/40 font-bold text-indigo-950 p-0.5 align-middle text-[11px]">{{ getStaffCategoryCount(staff.id, 'night') }}</td>
+                                    <td class="border-b border-r border-slate-200 bg-emerald-50/40 font-bold text-emerald-950 p-0.5 align-middle text-[11px]">{{ getStaffCategoryCount(staff.id, 'off_pub') }}</td>
+                                    <td class="border-b border-r border-slate-200 bg-sky-50/40 font-bold text-sky-950 p-0.5 align-middle text-[11px]">{{ getStaffCategoryCount(staff.id, 'off_paid') }}</td>
+                                    <td class="border-b border-r border-slate-200 bg-purple-50/40 font-bold text-purple-950 p-0.5 align-middle text-[11px]">{{ getStaffCategoryCount(staff.id, 'off_hol') }}</td>
+                                    <td class="border-b border-r border-slate-200 bg-blue-50/40 font-bold text-blue-950 p-0.5 align-middle text-[11px]">{{ getStaffCategoryCount(staff.id, 'committee') }}</td>
+                                    <td class="border-b border-slate-200 bg-teal-50/40 font-bold text-teal-950 p-0.5 align-middle text-[11px]">{{ getStaffCategoryCount(staff.id, 'training') }}</td>
+                                </tr>
+                            </tbody>
+                            <tfoot class="bg-slate-100 font-bold text-slate-700">
+                                <tr>
+                                    <td colspan="4" class="sticky top-0 sticky-col-idx z-30 bg-slate-200 border-t border-b border-r border-slate-300 p-1 text-right text-amber-950 text-[11px]" title="補助者を除く看護職員の日勤合計">日勤(‥)計 <span class="text-[9px] font-normal text-slate-500">(除補助)</span>:</td>
+                                    <td v-for="d in daysInMonth" :key="'s-d-'+d.dateStr" :class="[d.is4WeekThick?'border-r-2 border-r-slate-800':'border-r border-slate-200', d.isCurrentMonth?'text-amber-950 bg-amber-50/60':'text-slate-400 bg-slate-200/50']" class="p-0.5 border-t border-b text-center text-[11px]">{{ getDailyShiftCount(d.dateStr, 'day') }}</td>
+                                    <td colspan="8" class="bg-slate-200 border-t border-b border-slate-300"></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="sticky top-0 sticky-col-idx z-30 bg-slate-200 border-b border-r border-slate-300 p-1 text-right text-amber-900 text-[11px]" title="補助者を除く看護職員の中勤合計">中勤計 <span class="text-[9px] font-normal text-slate-500">(除補助)</span>:</td>
+                                    <td v-for="d in daysInMonth" :key="'s-m-'+d.dateStr" :class="[d.is4WeekThick?'border-r-2 border-r-slate-800':'border-r border-slate-200', d.isCurrentMonth?'text-amber-900 bg-amber-50/40':'text-slate-400 bg-slate-200/50']" class="p-0.5 border-b text-center text-[11px]">{{ getDailyShiftCount(d.dateStr, 'mid') }}</td>
+                                    <td colspan="8" class="bg-slate-200 border-b border-slate-300"></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="sticky top-0 sticky-col-idx z-30 bg-slate-200 border-b border-r border-slate-300 p-1 text-right text-indigo-950 text-[11px]" title="補助者を除く看護職員の入り合計">入り(＜)計 <span class="text-[9px] font-normal text-slate-500">(除補助)</span>:</td>
+                                    <td v-for="d in daysInMonth" :key="'s-n-'+d.dateStr" :class="[d.is4WeekThick?'border-r-2 border-r-slate-800':'border-r border-slate-200', d.isCurrentMonth?'text-indigo-950 bg-indigo-50/60':'text-slate-400 bg-slate-200/50']" class="p-0.5 border-b text-center text-[11px]">{{ getDailyShiftCount(d.dateStr, 'night') }}</td>
+                                    <td colspan="8" class="bg-slate-200 border-b border-slate-300"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 2: REQUESTS ================= -->
+            <div v-show="activeTab === 'requests'" class="flex-1 flex flex-col space-y-2.5">
+                <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
+                    <div>
+                        <h2 class="font-bold text-slate-800 text-sm sm:text-base">休暇・勤務希望入力</h2>
+                        <p class="text-[11px] text-slate-500">「休」希望は公休・年休・祝休のいずれかが割り当てられれば不一致になりません。</p>
+                    </div>
+                    <div class="flex items-center space-x-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-200 overflow-x-auto">
+                        <span class="text-xs font-bold text-slate-500 mr-1 shrink-0">スタンプ:</span>
+                        <button v-for="sym in requestPresetSymbols" :key="'req-'+sym.code" @click="selectedRequestSymbol = (selectedRequestSymbol === sym.code ? '' : sym.code)" :style="{ backgroundColor: sym.bg, color: sym.text }" :class="selectedRequestSymbol === sym.code ? 'ring-2 ring-indigo-600 font-black shadow scale-105' : 'opacity-80 hover:opacity-100'" class="px-2.5 py-1 rounded text-xs font-bold transition border border-slate-300 shrink-0">{{ sym.code }}</button>
+                        <button @click="selectedRequestSymbol = ''" :class="selectedRequestSymbol === '' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-600'" class="px-2 py-1 rounded text-xs font-bold transition shrink-0">消去</button>
+                        <button @click="askClearRequests" class="px-2.5 py-1 bg-rose-50 text-rose-700 rounded text-xs font-bold transition border border-rose-300 flex items-center ml-1"><i class="fa-solid fa-trash-can mr-1 text-rose-600"></i>希望全消去</button>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 relative">
+                    <div class="overflow-x-auto h-full touch-pan-x">
+                        <table class="w-full border-separate border-spacing-0 text-center text-xs">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 font-bold">
+                                    <th class="sticky top-0 sticky-col-name z-30 bg-slate-200 border-b border-r border-slate-300 p-1.5 text-left">氏名</th>
+                                    <th class="sticky top-0 sticky-col-team z-30 bg-slate-200 border-b border-r border-slate-300 p-1 text-center">●</th>
+                                    <th v-for="d in daysInMonth" :key="'rq-h-'+d.dateStr" :class="[d.isCurrentMonth?'':'bg-slate-100/70 text-slate-400 opacity-60', d.dayOfWeek===0||d.isHoliday?'text-rose-600 bg-rose-50/50':(d.dayOfWeek===6?'text-sky-600 bg-sky-50/50':'')]" class="sticky top-0 z-20 border-b border-r border-slate-300 p-1 min-w-[32px]">
+                                        <div class="text-[9px]">{{ d.monthNum }}/{{ d.dayNum }}</div><div class="font-bold">{{ d.dayName }}</div>
+                                    </th>
+                                    <th class="sticky top-0 z-20 bg-slate-200 border-b border-slate-300 p-1.5 min-w-[50px]">件数</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                <tr v-for="staff in staffList" :key="'rq-s-'+staff.id" class="hover:bg-slate-50">
+                                    <td class="sticky-col-name bg-white border-b border-r border-slate-200 p-1 font-bold text-slate-800 text-left truncate">{{ staff.name }}</td>
+                                    <td class="sticky-col-team bg-white border-b border-r border-slate-200 p-0.5 text-center align-middle"><span class="w-3.5 h-3.5 rounded-full inline-block border border-black/10" :style="{ backgroundColor: getTeamColor(staff.teamName).dot }"></span></td>
+                                    <td v-for="d in daysInMonth" :key="'rq-c-'+staff.id+'-'+d.dateStr" @click="requestCellClicked(staff.id, d.dateStr)" @dblclick="requestCellDblClicked(staff.id, d.dateStr)" :class="d.isCurrentMonth ? 'cursor-pointer hover:bg-amber-50 active:bg-amber-100' : 'bg-slate-100/50 opacity-60'" class="p-0.5 border-b border-r border-slate-200 text-center min-w-[32px] h-[34px] align-middle">
+                                        <div v-if="getRequestSymbol(staff.id, d.dateStr)" :style="getRequestSymbolStyle(getRequestSymbol(staff.id, d.dateStr))" class="w-full h-full rounded flex items-center justify-center font-bold text-xs shadow-sm">{{ getRequestSymbol(staff.id, d.dateStr) }}</div>
+                                    </td>
+                                    <td class="border-b border-slate-200 font-bold text-amber-800 p-1 align-middle text-[11px]">{{ getStaffRequestCount(staff.id) }}件</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 3: DAILY STAFF (勤務者確認) ================= -->
+            <div v-show="activeTab === 'dailyStaff'" class="flex-1 flex flex-col space-y-2.5">
+                <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-2 no-print">
+                    <div>
+                        <h2 class="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
+                            <span><i class="fa-solid fa-list-check text-indigo-600 mr-1.5"></i>勤務者確認（日別一覧）</span>
+                            <span v-if="dailyViolationsTotalCount > 0" class="text-xs bg-rose-500 text-white px-2 py-0.5 rounded-full font-black animate-pulse">スタッフNG: {{ dailyViolationsTotalCount }}件検出</span>
+                        </h2>
+                    </div>
+                    <button @click="printRoster" class="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-sm transition"><i class="fa-solid fa-print mr-1"></i>印刷</button>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 p-2 sm:p-4 print-full">
+                    <div class="max-w-6xl mx-auto overflow-x-auto max-h-[75vh]">
+                        <table class="w-full text-xs sm:text-sm border-collapse border border-slate-300">
+                            <thead class="bg-slate-100 sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th class="border border-slate-300 p-2 w-20 text-center font-bold text-slate-700">日付</th>
+                                    <th class="border border-slate-300 p-2 w-[42%] text-left font-bold text-amber-950 bg-amber-50">日勤・中勤・委・研</th>
+                                    <th class="border border-slate-300 p-2 w-[42%] text-left font-bold text-indigo-950 bg-indigo-50">入り(夜勤)グループ</th>
+                                    <th class="border border-slate-300 p-2 w-48 text-left font-bold text-rose-950 bg-rose-50">NG判定</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                <tr v-for="d in dailyStaffList" :key="'ds-'+d.dateStr" :class="d.violations.length > 0 ? 'bg-rose-50/40 hover:bg-rose-50/70' : 'hover:bg-slate-50'">
+                                    <td class="border border-slate-300 p-1 sm:p-2 text-center align-middle" :class="d.dayOfWeek === 0 || d.isHoliday ? 'text-rose-600 bg-rose-50/50' : (d.dayOfWeek === 6 ? 'text-sky-600 bg-sky-50/50' : 'text-slate-700')">
+                                        <div class="font-bold whitespace-nowrap">{{ d.dayNum }}日 ({{ d.dayName }})</div>
+                                        <div v-if="d.isHoliday" class="text-[9px] text-rose-500 mt-0.5">{{ d.holidayName || '祝日' }}</div>
+                                    </td>
+                                    <td class="border border-slate-300 p-1 sm:p-2 align-top">
+                                        <div class="flex flex-wrap gap-1">
+                                            <span v-if="d.dayStaff.length === 0" class="text-slate-400 text-xs">-</span>
+                                            <span v-for="s in d.dayStaff" :key="'dd-'+s.id" :class="d.violatingStaffIds.includes(s.id) ? 'border-rose-400 bg-rose-100/90 text-rose-900 ring-1 ring-rose-400 font-bold' : 'bg-white border-slate-200 text-slate-700'" class="inline-flex items-center border shadow-sm rounded px-1.5 py-0.5 text-[11px] transition">
+                                                <span class="w-2 h-2 rounded-full mr-1" :style="{ backgroundColor: getTeamColor(s.teamName).dot }"></span>
+                                                {{ s.name }} <span class="text-[10px] text-slate-500 ml-1">({{ s.role }})</span> <span class="text-amber-800 ml-1 font-bold">[{{ s.shift }}]</span>
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="border border-slate-300 p-1 sm:p-2 align-top">
+                                        <div class="flex flex-wrap gap-1">
+                                            <span v-if="d.nightStaff.length === 0" class="text-slate-400 text-xs">-</span>
+                                            <span v-for="s in d.nightStaff" :key="'dn-'+s.id" :class="d.violatingStaffIds.includes(s.id) ? 'border-rose-400 bg-rose-100/90 text-rose-900 ring-1 ring-rose-400 font-bold' : 'bg-white border-slate-200 text-slate-700'" class="inline-flex items-center border shadow-sm rounded px-1.5 py-0.5 text-[11px] transition">
+                                                <span class="w-2 h-2 rounded-full mr-1" :style="{ backgroundColor: getTeamColor(s.teamName).dot }"></span>
+                                                {{ s.name }} <span class="text-[10px] text-slate-500 ml-1">({{ s.role }})</span> <span class="text-indigo-800 ml-1 font-bold">[{{ s.shift }}]</span>
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="border border-slate-300 p-1 sm:p-2 align-top">
+                                        <div v-if="d.violations.length === 0" class="text-emerald-700 font-semibold text-[11px] flex items-center"><i class="fa-solid fa-circle-check mr-1 text-emerald-500"></i>適合</div>
+                                        <div v-else class="space-y-1">
+                                            <div v-for="(v, vIdx) in d.violations" :key="'v-'+vIdx" class="bg-rose-100 border border-rose-300 text-rose-900 px-2 py-1 rounded text-[10px] leading-tight font-medium shadow-sm">
+                                                <i class="fa-solid fa-triangle-exclamation text-rose-600 mr-1"></i><span class="font-bold">{{ v.reason }}</span>
+                                                <div class="text-[9px] text-rose-700 mt-0.5">({{ v.targetA }} × {{ v.targetB }})</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 4: FISCAL YEAR SUMMARY ================= -->
+            <div v-show="activeTab === 'fiscalSummary'" class="flex-1 flex flex-col space-y-2.5">
+                <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 no-print">
+                    <div><h2 class="font-bold text-slate-800 text-sm sm:text-base"><i class="fa-solid fa-calendar-week text-indigo-600 mr-1"></i>年度別スタッフ集計 (4月〜翌3月)</h2></div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="flex items-center space-x-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-300">
+                            <span class="text-xs font-bold text-slate-600">年度:</span>
+                            <select v-model.number="selectedFiscalYear" class="bg-transparent font-bold text-xs text-slate-800 outline-none">
+                                <option :value="currentYear - 1">{{ currentYear - 1 }}年度</option>
+                                <option :value="currentYear">{{ currentYear }}年度</option>
+                                <option :value="currentYear + 1">{{ currentYear + 1 }}年度</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center space-x-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-300">
+                            <span class="text-xs font-bold text-slate-600">項目:</span>
+                            <select v-model="selectedFiscalMetric" class="bg-transparent font-bold text-xs text-slate-800 outline-none">
+                                <option value="total_work">総勤務(出勤)</option>
+                                <option value="day">日勤日数(‥)</option>
+                                <option value="night">入り日数(＜)</option>
+                                <option value="mid">中勤日数(中)</option>
+                                <option value="committee">委員会(委)</option>
+                                <option value="training">研修(研)</option>
+                                <option value="off_pub">公休(○)</option>
+                                <option value="off_paid">年休(年)</option>
+                                <option value="off_hol">祝休(◎)</option>
+                            </select>
+                        </div>
+                        <button @click="exportFiscalSummaryCsv" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg text-xs shadow transition"><i class="fa-solid fa-file-export mr-1"></i>CSV出力</button>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 p-2 sm:p-4 print-full">
+                    <div class="overflow-x-auto max-h-[75vh]">
+                        <table class="w-full text-xs text-center border-separate border-spacing-0">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 font-bold">
+                                    <th class="sticky top-0 left-0 z-30 bg-slate-200 border-b border-r border-slate-300 p-2 w-10">No.</th>
+                                    <th class="sticky top-0 left-10 z-30 bg-slate-200 border-b border-r border-slate-300 p-2 text-left min-w-[90px]">氏名</th>
+                                    <th v-for="m in fiscalMonths" :key="'fm-'+m.year+'-'+m.month" class="sticky top-0 z-20 border-b border-r border-slate-300 p-2 min-w-[50px]" :class="m.year === currentYear && m.month === currentMonth ? 'bg-indigo-100 text-indigo-900' : 'bg-slate-100'">{{ m.month }}月<div class="text-[9px] font-normal font-mono">{{ m.year }}</div></th>
+                                    <th class="sticky top-0 z-20 bg-indigo-950 text-white border-b border-slate-300 p-2 min-w-[65px]">年間合計</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                <tr v-for="(staff, idx) in staffList" :key="'fs-'+staff.id" class="hover:bg-slate-50">
+                                    <td class="sticky left-0 bg-white border-b border-r border-slate-200 p-1.5 text-slate-400 font-mono">{{ idx + 1 }}</td>
+                                    <td class="sticky left-10 bg-white border-b border-r border-slate-200 p-1.5 font-bold text-slate-800 text-left truncate">{{ staff.name }}</td>
+                                    <td v-for="m in fiscalMonths" :key="'fv-'+staff.id+'-'+m.month" class="border-b border-r border-slate-200 p-1.5 font-mono text-slate-700" :class="m.year === currentYear && m.month === currentMonth ? 'bg-indigo-50/60 font-black' : ''">{{ getStaffMonthCount(staff.id, m.year, m.month, selectedFiscalMetric) }}</td>
+                                    <td class="border-b border-r border-slate-200 p-1.5 font-mono font-black text-indigo-700 bg-indigo-50/30">{{ getStaffYearTotal(staff.id, selectedFiscalYear, selectedFiscalMetric) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 5: STAFF & LEAVE SETTINGS ================= -->
+            <div v-show="activeTab === 'staff'" class="flex-1 flex flex-col space-y-2.5">
+                <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                    <div><h2 class="font-bold text-slate-800 text-sm sm:text-base">スタッフ設定（名簿・チーム・役職・年休管理） <span class="text-xs bg-sky-100 text-sky-800 px-2 py-0.5 rounded font-bold border border-sky-200 ml-1">4/1起点管理</span></h2></div>
+                    <div class="flex items-center space-x-2">
+                        <button @click="exportStaffCsv" class="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition"><i class="fa-solid fa-file-export mr-1"></i>CSV出力</button>
+                        <label class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition cursor-pointer"><i class="fa-solid fa-file-csv mr-1"></i>CSV読込<input type="file" @change="importStaffCsv" accept=".csv,.txt" class="hidden"></label>
+                        <button @click="addNewStaffDirectly" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition"><i class="fa-solid fa-user-plus mr-1"></i>追加</button>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 p-2 sm:p-4">
+                    <div class="max-w-5xl mx-auto space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+                        <div v-for="(staff, index) in staffList" :key="staff.id" class="p-2.5 sm:p-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-200 flex flex-wrap items-center gap-2.5 shadow-sm transition">
+                            <div class="flex items-center space-x-1.5 shrink-0">
+                                <div class="flex flex-col space-y-0.5">
+                                    <button @click="moveStaffUp(index)" :disabled="index === 0" class="px-1.5 py-0.5 bg-slate-100 disabled:opacity-25 rounded text-[10px]"><i class="fa-solid fa-chevron-up"></i></button>
+                                    <button @click="moveStaffDown(index)" :disabled="index === staffList.length - 1" class="px-1.5 py-0.5 bg-slate-100 disabled:opacity-25 rounded text-[10px]"><i class="fa-solid fa-chevron-down"></i></button>
+                                </div>
+                                <span class="text-xs font-mono font-bold text-slate-400 w-5 text-center">{{ index + 1 }}</span>
+                            </div>
+                            <div class="flex-1 min-w-[130px]"><label class="text-[9px] font-bold text-slate-400 block mb-0.5">氏名</label><input type="text" v-model="staff.name" @change="autoSave" placeholder="氏名を入力" class="w-full border border-slate-300 rounded-lg px-2.5 py-1 text-xs sm:text-sm font-bold text-slate-800 outline-none"></div>
+                            <div class="w-32 shrink-0 bg-sky-50/80 p-1.5 rounded-lg border border-sky-200">
+                                <label class="text-[10px] font-bold text-sky-900 block truncate" title="4/1時点の使用可能日数"><i class="fa-solid fa-calendar-check mr-0.5"></i>4/1可能年休</label>
+                                <div class="flex items-center mt-0.5"><input type="number" step="0.5" min="0" v-model.number="staff.initialLeaveDays" @change="autoSave" class="w-full border border-sky-300 rounded px-2 py-0.5 text-xs font-mono font-bold text-right"><span class="text-[11px] font-bold text-sky-800 ml-1">日</span></div>
+                            </div>
+                            <div class="flex items-center space-x-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200 shrink-0">
+                                <span class="text-[10px] font-bold text-slate-400 mr-0.5">チーム:</span>
+                                <button v-for="(tColor, tName) in teamColors" :key="tName" @click="staff.teamName = tName; autoSave()" :style="{ backgroundColor: tColor.dot }" :class="staff.teamName === tName ? 'ring-2 ring-indigo-600 scale-110 shadow' : 'opacity-40 hover:opacity-80'" class="w-5 h-5 rounded-full transition flex items-center justify-center text-[10px] text-white font-black"><span v-if="staff.teamName === tName">✓</span></button>
+                            </div>
+                            <div class="shrink-0"><label class="text-[9px] font-bold text-slate-400 block mb-0.5">役職</label><select v-model="staff.role" @change="autoSave" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-medium bg-slate-50 outline-none">
+                                <option value="看護師長">看護師長</option><option value="副看護師長">副看護師長</option><option value="主任">主任</option><option value="看護師">看護師</option><option value="看護（基礎）">看護（基礎）</option><option value="補助者">補助者</option>
+                            </select></div>
+                            <div class="shrink-0 bg-indigo-50/70 p-1.5 rounded-lg border border-indigo-200 flex items-center space-x-2">
+                                <div>
+                                    <label class="text-[9px] font-bold text-indigo-900 block">夜勤可否</label>
+                                    <select v-model="staff.canNight" @change="autoSave" class="border border-indigo-300 rounded px-1.5 py-0.5 text-[11px] font-bold bg-white">
+                                        <option :value="true">夜勤可</option>
+                                        <option :value="false">日勤のみ</option>
+                                    </select>
+                                </div>
+                                <div v-if="staff.canNight !== false" class="w-16">
+                                    <label class="text-[9px] font-bold text-indigo-900 block">月上限(回)</label>
+                                    <input type="number" min="0" max="10" v-model.number="staff.maxNightPerMonth" @change="autoSave" class="w-full border border-indigo-300 rounded px-1.5 py-0.5 text-[11px] font-mono font-bold text-center">
+                                </div>
+                            </div>
+                            <div class="shrink-0 pt-3 sm:pt-0"><button @click="removeStaff(staff.id)" class="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"><i class="fa-solid fa-trash-can"></i></button></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB: AUTO-GENERATION CONFIG (自動生成設定・看護協会ガイドライン準拠) ================= -->
+            <div v-show="activeTab === 'autoGenConfig'" class="flex-1 flex flex-col space-y-3">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="bg-indigo-600 text-white text-xs font-extrabold px-2.5 py-1 rounded-lg shadow-sm"><i class="fa-solid fa-brain mr-1"></i>AI・数理アシスト設定</span>
+                            <h2 class="font-extrabold text-slate-800 text-sm sm:text-base">自動生成ルール＆日本看護協会ガイドライン設定</h2>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1">日本看護協会「看護職の夜勤・交代制勤務に関するガイドライン」の11基準と、病棟の日別必要人数・公平性ルールを設定します。</p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button @click="applyJnaStandardPreset" class="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold rounded-xl text-xs transition flex items-center">
+                            <i class="fa-solid fa-shield-heart mr-1.5 text-emerald-600"></i>看護協会推奨値をセット
+                        </button>
+                        <button @click="autoGenerateSchedule(); activeTab = 'main'" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i>この条件で今すぐ自動生成
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <!-- Section 1: 日本看護協会 夜勤・交代制勤務ガイドライン基準 -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                        <div class="border-b border-slate-100 pb-2 flex items-center justify-between">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center">
+                                <i class="fa-solid fa-book-medical text-indigo-600 mr-2"></i>1. 日本看護協会ガイドライン準拠ルール
+                            </h3>
+                            <span class="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold border border-indigo-200">労務・健康管理基準</span>
+                        </div>
+
+                        <div class="space-y-2.5 text-xs">
+                            <!-- 基準1 & 基準10: 勤務間隔と正循環 -->
+                            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start justify-between gap-2">
+                                <div>
+                                    <div class="font-bold text-slate-800 flex items-center">
+                                        <span class="bg-indigo-900 text-white text-[10px] px-1.5 py-0.5 rounded mr-1.5">基準1・10</span>
+                                        勤務間隔（11時間以上）と正循環の交代周期
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 mt-0.5">逆循環（中勤→日勤、明け→日勤など）を禁止し、日勤→中勤→入り→明け→休日の順で配置します。</p>
+                                </div>
+                                <input type="checkbox" v-model="autoGenConfig.enforceForwardRotation" @change="autoSave" class="w-4 h-4 accent-indigo-600 rounded mt-1 shrink-0">
+                            </div>
+
+                            <!-- 基準3 & 基準4: 夜勤回数と連続夜勤制限 -->
+                            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <div class="font-bold text-slate-800 flex items-center">
+                                        <span class="bg-indigo-900 text-white text-[10px] px-1.5 py-0.5 rounded mr-1.5">基準3・4</span>
+                                        月間夜勤（入り）回数の上限と均等化
+                                    </div>
+                                    <div class="flex items-center space-x-1">
+                                        <span class="text-[11px] text-slate-600">標準上限:</span>
+                                        <input type="number" min="1" max="10" v-model.number="autoGenConfig.defaultMaxNightCount" @change="autoSave" class="w-14 border border-slate-300 rounded px-1.5 py-0.5 text-center font-bold">
+                                        <span class="text-[11px] font-bold">回/月</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between pt-1 border-t border-slate-200/70">
+                                    <span class="text-[11px] text-slate-600">「入り→明け→入り→明け」の連続夜勤ブロックを禁止する</span>
+                                    <input type="checkbox" v-model="autoGenConfig.forbidConsecutiveNightBlocks" @change="autoSave" class="w-4 h-4 accent-indigo-600 rounded">
+                                </div>
+                            </div>
+
+                            <!-- 基準5: 連続勤務日数 -->
+                            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                                <div>
+                                    <div class="font-bold text-slate-800 flex items-center">
+                                        <span class="bg-indigo-900 text-white text-[10px] px-1.5 py-0.5 rounded mr-1.5">基準5</span>
+                                        連続勤務日数の上限（ガイドライン推奨: 5日以内）
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 mt-0.5">前月末からの連続出勤日数も合算して上限を超えないよう公休を配置します。</p>
+                                </div>
+                                <div class="flex items-center space-x-1 shrink-0">
+                                    <input type="number" min="3" max="10" v-model.number="rules.maxConsecutiveWorkDays" @change="autoSave" class="w-14 border border-slate-300 rounded px-1.5 py-1 text-center font-bold">
+                                    <span class="font-bold">日以内</span>
+                                </div>
+                            </div>
+
+                            <!-- 基準8: 夜勤後の休息確保 -->
+                            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                                <div class="font-bold text-slate-800 flex items-center">
+                                    <span class="bg-indigo-900 text-white text-[10px] px-1.5 py-0.5 rounded mr-1.5">基準8</span>
+                                    夜勤後の休息確保（おおむね24〜48時間以上）
+                                </div>
+                                <p class="text-[11px] text-slate-500">「＜（入り）→ ＞（明け）」の翌日に確保する必須休日（○）の日数を指定します。</p>
+                                <div class="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200">
+                                    <span class="font-semibold text-slate-700">夜勤明け（＞）直後の必須公休数:</span>
+                                    <select v-model.number="autoGenConfig.restDaysAfterPostNight" @change="autoSave" class="border border-slate-300 rounded px-2 py-1 font-bold text-indigo-900 bg-indigo-50/50">
+                                        <option :value="1">最低1日休み（＜ → ＞ → ○）</option>
+                                        <option :value="2">2日連休を優先（＜ → ＞ → ○ → ○）</option>
+                                        <option :value="0">制限なし（非推奨）</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- 基準9: 週末の連続休日 -->
+                            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-start justify-between gap-2">
+                                <div>
+                                    <div class="font-bold text-slate-800 flex items-center">
+                                        <span class="bg-indigo-900 text-white text-[10px] px-1.5 py-0.5 rounded mr-1.5">基準9</span>
+                                        週末の連続休日（月1回以上の土日連休）
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 mt-0.5">少なくとも月1回は、土曜・日曜ともに前後に夜勤のない連休（金夜勤なし＋土日休）を確保します。</p>
+                                </div>
+                                <input type="checkbox" v-model="autoGenConfig.ensureMonthlyWeekendOff" @change="autoSave" class="w-4 h-4 accent-indigo-600 rounded mt-1 shrink-0">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: 日別必要人数・公休数・役職ルール -->
+                    <div class="space-y-3 flex flex-col">
+                        <!-- 日別・曜日別の必要配置人数 -->
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                            <div class="border-b border-slate-100 pb-2 flex items-center justify-between">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center">
+                                    <i class="fa-solid fa-users-gear text-amber-500 mr-2"></i>2. 曜日別の必要配置人数設定（補助者を除く）
+                                </h3>
+                                <span class="text-[10px] text-slate-500 font-semibold">看護職員: {{ staffList.filter(s => s.role !== '補助者').length }}名 / 補助者: {{ staffList.filter(s => s.role === '補助者').length }}名(除外)</span>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-xs text-center border-collapse border border-slate-200 rounded-lg">
+                                    <thead>
+                                        <tr class="bg-slate-100 text-slate-700 font-bold">
+                                            <th class="border border-slate-200 p-2 text-left">勤務区分</th>
+                                            <th class="border border-slate-200 p-2">平日 (月〜金)</th>
+                                            <th class="border border-slate-200 p-2 text-sky-700 bg-sky-50/50">土曜</th>
+                                            <th class="border border-slate-200 p-2 text-rose-700 bg-rose-50/50">日曜・祝日</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-200">
+                                        <tr>
+                                            <td class="border border-slate-200 p-2 text-left font-bold text-amber-900 bg-amber-50/40">日勤 (‥) 目標人数</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="30" v-model.number="autoGenConfig.reqStaff.weekday.day" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold"> 名</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="30" v-model.number="autoGenConfig.reqStaff.saturday.day" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold"> 名</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="30" v-model.number="autoGenConfig.reqStaff.holiday.day" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold"> 名</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="border border-slate-200 p-2 text-left font-bold text-amber-800 bg-amber-50/20">中勤 (中) 人数</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="15" v-model.number="autoGenConfig.reqStaff.weekday.mid" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold"> 名</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="15" v-model.number="autoGenConfig.reqStaff.saturday.mid" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold"> 名</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="15" v-model.number="autoGenConfig.reqStaff.holiday.mid" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold"> 名</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="border border-slate-200 p-2 text-left font-bold text-indigo-950 bg-indigo-50/40">入り (＜) 必須人数</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="15" v-model.number="autoGenConfig.reqStaff.weekday.night" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold text-indigo-700"> 名</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="15" v-model.number="autoGenConfig.reqStaff.saturday.night" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold text-indigo-700"> 名</td>
+                                            <td class="border border-slate-200 p-1.5"><input type="number" min="0" max="15" v-model.number="autoGenConfig.reqStaff.holiday.night" @change="autoSave" class="w-16 border rounded px-2 py-1 text-center font-bold text-indigo-700"> 名</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 月間公休数・役職別ルール・チームバランス -->
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3 flex-1">
+                            <div class="border-b border-slate-100 pb-2 flex items-center justify-between">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center">
+                                    <i class="fa-solid fa-scale-balanced text-emerald-600 mr-2"></i>3. 4週8休・公休間隔・祝日振替・役職設定
+                                </h3>
+                                <span class="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-bold border border-emerald-200">基準日: {{ cycleStartDate }}</span>
+                            </div>
+
+                            <!-- 4週8休・週2日目安・祝日分離の説明および設定 -->
+                            <div class="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <span class="font-extrabold text-emerald-950 flex items-center">
+                                            <i class="fa-solid fa-calendar-check mr-1.5 text-emerald-600"></i>4週間サイクル公休数（祝日『◎』は別枠）
+                                        </span>
+                                        <span class="text-[10px] text-emerald-700 block mt-0.5">勤務設定の4週基準日（{{ cycleStartDate }}）からの28日間に割り当てる公休（○）の数</span>
+                                    </div>
+                                    <div class="flex items-center space-x-1 shrink-0">
+                                        <input type="number" min="4" max="12" v-model.number="autoGenConfig.offDaysPer4Weeks" @change="autoSave" class="w-14 border border-emerald-400 rounded px-2 py-1 text-center font-black text-emerald-950 bg-white">
+                                        <span class="font-bold text-emerald-900">日 / 4週</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between pt-2 border-t border-emerald-200/70">
+                                    <div>
+                                        <span class="font-bold text-slate-800">日曜〜土曜の間に公休（○）を2つ配置（目安・優先）</span>
+                                        <span class="text-[10px] text-slate-500 block">絶対条件ではなく、4週{{ autoGenConfig.offDaysPer4Weeks }}休の枠内で週2日ペースを優先します</span>
+                                    </div>
+                                    <input type="checkbox" v-model="autoGenConfig.preferTwoOffPerWeek" @change="autoSave" class="w-4 h-4 accent-emerald-600 rounded shrink-0">
+                                </div>
+                            </div>
+
+                            <!-- 公休の間隔制限 & 祝日勤務の振替設定 -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                                <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                                    <div class="flex items-center justify-between">
+                                        <span class="font-bold text-slate-800">公休の間隔に日数制限をつける</span>
+                                        <input type="checkbox" v-model="autoGenConfig.enableMaxOffInterval" @change="autoSave" class="w-4 h-4 accent-indigo-600 rounded">
+                                    </div>
+                                    <div v-if="autoGenConfig.enableMaxOffInterval" class="flex items-center justify-between pt-1 border-t border-slate-200">
+                                        <span class="text-[10px] text-slate-500">公休〜次の公休の最大間隔:</span>
+                                        <div class="flex items-center space-x-1">
+                                            <input type="number" min="2" max="12" v-model.number="autoGenConfig.maxOffIntervalDays" @change="autoSave" class="w-12 border border-slate-300 rounded px-1.5 py-0.5 text-center font-bold bg-white">
+                                            <span class="font-bold text-[11px]">日以内</span>
+                                        </div>
+                                    </div>
+                                    <div v-else class="text-[10px] text-slate-400">※現在は連続勤務上限のみで制御</div>
+                                </div>
+
+                                <div class="p-2.5 bg-purple-50/50 rounded-xl border border-purple-200 space-y-1.5">
+                                    <div class="font-bold text-purple-950 flex items-center justify-between">
+                                        <span><i class="fa-solid fa-flag text-purple-600 mr-1"></i>祝日勤務時の振替設定</span>
+                                        <span class="text-[9px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded border border-purple-300">祝休(◎)</span>
+                                    </div>
+                                    <select v-model="autoGenConfig.compensateHolidayWork" @change="autoSave" class="w-full border border-purple-300 rounded px-2 py-1 font-bold text-xs bg-white text-purple-950">
+                                        <option :value="true">必ず振り替える（別日に『◎』を付与）</option>
+                                        <option :value="false">振り替えない（出勤日のまま）</option>
+                                    </select>
+                                    <span class="text-[10px] text-purple-700 block">※公休（○）には祝日は含まれません</span>
+                                </div>
+                            </div>
+
+                            <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                                <div>
+                                    <span class="font-bold text-slate-800 block">生成時の上書きモード（当月のみ対象）</span>
+                                    <span class="text-[10px] text-slate-500">前月・翌月の表示列は変更されません</span>
+                                </div>
+                                <select v-model="autoGenConfig.overwriteExisting" @change="autoSave" class="border border-slate-300 rounded px-2 py-1 font-bold text-xs bg-white">
+                                    <option :value="false">空欄のみ埋める</option>
+                                    <option :value="true">希望以外を再生成</option>
+                                </select>
+                            </div>
+
+                            <div class="space-y-2 text-xs pt-1">
+                                <label class="flex items-center justify-between p-2.5 bg-indigo-50/70 rounded-xl border border-indigo-200 cursor-pointer">
+                                    <div>
+                                        <span class="font-bold text-indigo-950 flex items-center"><i class="fa-solid fa-scale-unbalanced-flip text-indigo-600 mr-1.5"></i>夜勤回数・連休数の公平化プロトコル（均等配分）</span>
+                                        <span class="block text-[10px] text-indigo-700">スタッフ間の「夜勤（入り）回数」「2連休以上の獲得数」「休日出勤数」の格差を最小化します</span>
+                                    </div>
+                                    <input type="checkbox" v-model="autoGenConfig.enforceFairness" @change="autoSave" class="w-4 h-4 accent-indigo-600 rounded">
+                                </label>
+
+                                <label class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                                    <div>
+                                        <span class="font-bold text-slate-800">看護師長は「平日日勤（‥）・土日祝は休日（○/◎）」に固定</span>
+                                        <span class="block text-[10px] text-slate-500">師長を夜勤・休日日勤の自動割当から除外し、平日日勤に固定します</span>
+                                    </div>
+                                    <input type="checkbox" v-model="autoGenConfig.headNurseWeekdayOnly" @change="autoSave" class="w-4 h-4 accent-indigo-600 rounded">
+                                </label>
+
+                                <div class="flex items-center justify-between p-2.5 bg-amber-50/60 rounded-xl border border-amber-200">
+                                    <div>
+                                        <span class="font-bold text-amber-950 flex items-center"><i class="fa-solid fa-user-shield text-amber-600 mr-1.5"></i>補助者は自動作成および日勤・中勤・夜勤のカウントから除外</span>
+                                        <span class="block text-[10px] text-amber-800">役職が「補助者」のスタッフは自動生成されず、下部の日勤・中勤・入り合計人数にも含まれません</span>
+                                    </div>
+                                    <span class="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-extrabold shrink-0">常時適用</span>
+                                </div>
+
+                                <label class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                                    <div>
+                                        <span class="font-bold text-slate-800">夜勤（入り）のチーム分散＆NGペア回避を強制</span>
+                                        <span class="block text-[10px] text-slate-500">ルール設定の「同日NGペア（基礎同士など）」を回避し、別チーム同士を優先ペアリングします</span>
+                                    </div>
+                                    <input type="checkbox" v-model="autoGenConfig.balanceNightTeams" @change="autoSave" class="w-4 h-4 accent-indigo-600 rounded">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 6: RULES ================= -->
+            <div v-show="activeTab === 'rules'" class="flex-1 flex flex-col space-y-3">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 max-w-4xl">
+                    <h2 class="font-bold text-slate-800 text-sm sm:text-base flex items-center mb-2"><i class="fa-solid fa-user-xmark text-rose-600 mr-2"></i>同日勤務のNGスタッフ・役職ペア</h2>
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 mb-3">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                            <div class="bg-white p-2.5 rounded-lg border border-slate-200">
+                                <label class="text-[11px] font-bold text-slate-600 block mb-1">対象 1:</label>
+                                <div class="flex items-center space-x-1.5">
+                                    <select v-model="newStaffRule.type1" class="border rounded px-1.5 py-1 text-xs font-bold text-slate-700 outline-none"><option value="staff">個人</option><option value="role">役職</option></select>
+                                    <select v-if="newStaffRule.type1 === 'staff'" v-model="newStaffRule.val1" class="border rounded px-2 py-1 text-xs font-bold outline-none flex-1"><option value="">(選択)</option><option v-for="s in staffList" :key="'rs1-'+s.id" :value="s.id">{{ s.name }}</option></select>
+                                    <select v-else v-model="newStaffRule.val1" class="border rounded px-2 py-1 text-xs font-bold outline-none flex-1"><option value="看護（基礎）">看護（基礎）</option><option value="補助者">補助者</option><option value="看護師">看護師</option></select>
+                                </div>
+                            </div>
+                            <div class="bg-white p-2.5 rounded-lg border border-slate-200">
+                                <label class="text-[11px] font-bold text-slate-600 block mb-1">対象 2:</label>
+                                <div class="flex items-center space-x-1.5">
+                                    <select v-model="newStaffRule.type2" class="border rounded px-1.5 py-1 text-xs font-bold text-slate-700 outline-none"><option value="staff">個人</option><option value="role">役職</option></select>
+                                    <select v-if="newStaffRule.type2 === 'staff'" v-model="newStaffRule.val2" class="border rounded px-2 py-1 text-xs font-bold outline-none flex-1"><option value="">(選択)</option><option v-for="s in staffList" :key="'rs2-'+s.id" :value="s.id">{{ s.name }}</option></select>
+                                    <select v-else v-model="newStaffRule.val2" class="border rounded px-2 py-1 text-xs font-bold outline-none flex-1"><option value="看護（基礎）">看護（基礎）</option><option value="補助者">補助者</option><option value="看護師">看護師</option></select>
+                                </div>
+                            </div>
+                            <div class="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-col justify-between">
+                                <div><label class="text-[11px] font-bold text-slate-600 block mb-1">禁止する条件:</label><select v-model="newStaffRule.shiftScope" class="border rounded px-2 py-1 text-xs font-bold w-full"><option value="night">夜勤帯で同時配置</option><option value="day">日勤・中勤帯で同時配置</option><option value="any">同一日の出勤自体</option></select></div>
+                                <button @click="addStaffRule" class="w-full mt-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow transition"><i class="fa-solid fa-plus mr-1"></i>追加</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead><tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-300"><th class="p-2 w-10">No.</th><th class="p-2">対象1</th><th class="p-2">対象2</th><th class="p-2">禁止条件</th><th class="p-2 w-10">削除</th></tr></thead>
+                            <tbody class="divide-y divide-slate-200">
+                                <tr v-for="(rule, idx) in rules.staffNgPairs" :key="'sru-'+idx" class="hover:bg-slate-50">
+                                    <td class="p-2 font-mono text-slate-400">{{ idx + 1 }}</td>
+                                    <td class="p-2 font-bold">{{ rule.type1 === 'staff' ? getStaffNameById(rule.val1) : '役職: '+rule.val1 }}</td>
+                                    <td class="p-2 font-bold">{{ rule.type2 === 'staff' ? getStaffNameById(rule.val2) : '役職: '+rule.val2 }}</td>
+                                    <td class="p-2 text-rose-700">{{ getShiftScopeLabel(rule.shiftScope) }}</td>
+                                    <td class="p-2"><button @click="removeStaffRule(idx)" class="text-rose-600 hover:text-rose-800"><i class="fa-solid fa-trash-can"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 max-w-4xl">
+                    <h2 class="font-bold text-slate-800 text-sm sm:text-base flex items-center"><i class="fa-solid fa-calendar-day text-indigo-500 mr-2"></i>連続勤務日数のルール</h2>
+                    <div class="flex items-center space-x-3 bg-slate-50 p-3 rounded-lg border border-slate-200 mt-2">
+                        <input type="number" v-model.number="rules.maxConsecutiveWorkDays" @change="autoSave" min="1" max="14" class="border border-slate-300 rounded px-2.5 py-1 text-sm font-bold w-16 text-center">
+                        <span class="text-sm font-bold text-slate-700">日以上連続する出勤を警告する</span>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 max-w-4xl">
+                    <h2 class="font-bold text-slate-800 text-sm sm:text-base flex items-center mb-2"><i class="fa-solid fa-link-slash text-rose-500 mr-2"></i>禁止勤務組み合わせ (NGパターン)</h2>
+                    <div class="flex flex-wrap items-center gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200 mb-3">
+                        <select v-model.number="newNgComboLength" class="border rounded px-2 py-1.5 text-xs font-bold"><option :value="2">2日連続</option><option :value="3">3日連続</option></select>
+                        <div class="flex items-center space-x-1.5">
+                            <select v-model="newNgComboSymbols[0]" class="border rounded px-2 py-1.5 text-xs font-bold min-w-[100px]"><option value="">(1日目)</option><option v-for="g in groupOptions" :key="'c1g'+g.value" :value="g.value">{{ g.label }}</option><option v-for="s in symbols" :key="'c1s'+s.code" :value="s.code">{{ s.code }}</option></select>
+                            <span><i class="fa-solid fa-arrow-right text-slate-400"></i></span>
+                            <select v-model="newNgComboSymbols[1]" class="border rounded px-2 py-1.5 text-xs font-bold min-w-[100px]"><option value="">(2日目)</option><option v-for="g in groupOptions" :key="'c2g'+g.value" :value="g.value">{{ g.label }}</option><option v-for="s in symbols" :key="'c2s'+s.code" :value="s.code">{{ s.code }}</option></select>
+                            <template v-if="newNgComboLength === 3">
+                                <span><i class="fa-solid fa-arrow-right text-slate-400"></i></span>
+                                <select v-model="newNgComboSymbols[2]" class="border rounded px-2 py-1.5 text-xs font-bold min-w-[100px]"><option value="">(3日目)</option><option v-for="g in groupOptions" :key="'c3g'+g.value" :value="g.value">{{ g.label }}</option><option v-for="s in symbols" :key="'c3s'+s.code" :value="s.code">{{ s.code }}</option></select>
+                            </template>
+                        </div>
+                        <button @click="addNgCombo" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs shadow"><i class="fa-solid fa-plus mr-1"></i>追加</button>
+                    </div>
+                    <table class="w-full text-xs text-left border-collapse">
+                        <thead><tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-300"><th class="p-2 w-10">No.</th><th class="p-2">禁止パターン</th><th class="p-2 w-10">削除</th></tr></thead>
+                        <tbody class="divide-y divide-slate-200">
+                            <tr v-for="(combo, idx) in rules.ngCombos" :key="'ngc-'+idx" class="hover:bg-slate-50">
+                                <td class="p-2 font-mono text-slate-400">{{ idx + 1 }}</td>
+                                <td class="p-2 font-bold"><span v-for="(item, i) in combo" :key="'it-'+i" class="inline-flex items-center"><span class="px-2 py-1 bg-slate-100 border border-slate-300 rounded">{{ getComboSymbolName(item) }}</span><i v-if="i < combo.length - 1" class="fa-solid fa-arrow-right mx-1 text-[10px] text-slate-400"></i></span></td>
+                                <td class="p-2"><button @click="removeNgCombo(idx)" class="text-rose-600"><i class="fa-solid fa-trash-can"></i></button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ================= TAB 7: SHIFT SETTINGS ================= -->
+            <div v-show="activeTab === 'settings'" class="flex-1 flex flex-col space-y-3">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 max-w-3xl">
+                    <h2 class="font-bold text-slate-800 text-sm mb-1">4週間サイクルの基準日設定</h2>
+                    <div class="flex items-center space-x-3"><label class="text-xs font-bold text-slate-700">基準開始日:</label><input type="date" v-model="cycleStartDate" @change="autoSave" class="border border-slate-300 rounded px-2.5 py-1 text-xs font-bold outline-none"></div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 max-w-4xl flex-1">
+                    <div class="flex items-center justify-between mb-2">
+                        <h2 class="font-bold text-slate-800 text-sm">勤務設定（勤務記号・表示順）</h2>
+                        <button @click="addSymbol" class="px-2.5 py-1 bg-indigo-600 text-white font-bold rounded-lg text-xs"><i class="fa-solid fa-plus mr-1"></i>記号追加</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs text-left border-collapse">
+                            <thead><tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-300"><th class="p-1.5">順序</th><th class="p-1.5">見本</th><th class="p-1.5">記号</th><th class="p-1.5">名称</th><th class="p-1.5">背景色</th><th class="p-1.5">文字色</th><th class="p-1.5">集計区分</th><th class="p-1.5">削除</th></tr></thead>
+                            <tbody class="divide-y divide-slate-200">
+                                <tr v-for="(sym, symIdx) in symbols" :key="'sym-'+sym.id" class="hover:bg-slate-50">
+                                    <td class="p-1.5 text-center"><div class="flex items-center justify-center space-x-1"><button @click="moveSymbolUp(symIdx)" :disabled="symIdx === 0" class="p-1 bg-slate-100 disabled:opacity-25 rounded text-[10px]"><i class="fa-solid fa-chevron-up"></i></button><button @click="moveSymbolDown(symIdx)" :disabled="symIdx === symbols.length - 1" class="p-1 bg-slate-100 disabled:opacity-25 rounded text-[10px]"><i class="fa-solid fa-chevron-down"></i></button></div></td>
+                                    <td class="p-1.5"><div :style="{ backgroundColor: sym.bg, color: sym.text }" class="w-7 h-7 rounded flex items-center justify-center font-bold border text-xs">{{ sym.code }}</div></td>
+                                    <td class="p-1.5"><input type="text" v-model="sym.code" @change="autoSave" class="w-12 border rounded px-1 py-0.5 font-bold text-center"></td>
+                                    <td class="p-1.5"><input type="text" v-model="sym.name" @change="autoSave" class="w-24 border rounded px-1 py-0.5"></td>
+                                    <td class="p-1.5"><input type="color" v-model="sym.bg" @change="autoSave" class="w-8 h-6 border"></td>
+                                    <td class="p-1.5"><input type="color" v-model="sym.text" @change="autoSave" class="w-8 h-6 border"></td>
+                                    <td class="p-1.5">
+                                        <select v-model="sym.category" @change="autoSave" class="border rounded px-1 py-0.5 text-xs">
+                                            <option value="day">日勤グループ</option><option value="mid">中勤グループ</option><option value="night">入り(夜勤)</option><option value="post_night">明け</option><option value="committee">委員会</option><option value="training">研修</option><option value="off_pub">公休</option><option value="off_paid">年休(有休)</option><option value="off_hol">祝休</option><option value="off_holiday">汎用休日</option><option value="none">対象外</option>
+                                        </select>
+                                    </td>
+                                    <td class="p-1.5"><button @click="removeSymbol(sym.id)" class="text-rose-600"><i class="fa-solid fa-trash-can"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 8: HELP ================= -->
+            <div v-show="activeTab === 'help'" class="flex-1 max-w-5xl mx-auto w-full space-y-4 pb-8">
+                <!-- Welcome Banner -->
+                <div class="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white p-5 sm:p-6 rounded-2xl shadow-md">
+                    <div class="flex items-center space-x-3 mb-2">
+                        <div class="bg-white/10 p-2.5 rounded-xl"><i class="fa-solid fa-book-open-reader text-xl text-indigo-300"></i></div>
+                        <div>
+                            <h2 class="font-extrabold text-base sm:text-lg">はじめての方へ：看護師勤務表作成アプリ 使い方ガイド</h2>
+                            <p class="text-xs text-indigo-200 mt-0.5">初期設定から月々のシフト自動作成・微調整・出力までの流れを分かりやすく解説します。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5-Step Workflow Guide -->
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                    <h3 class="font-extrabold text-slate-800 text-sm sm:text-base flex items-center border-b border-slate-100 pb-2.5">
+                        <i class="fa-solid fa-shoe-prints text-indigo-600 mr-2"></i>基本の5ステップ（毎月の勤務表ができるまで）
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3 text-xs">
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <span class="bg-indigo-600 text-white font-black px-2 py-0.5 rounded text-[10px]">STEP 1</span>
+                                <h4 class="font-bold text-slate-800 text-sm mt-2 mb-1">スタッフ・初期設定</h4>
+                                <p class="text-slate-600 leading-relaxed">「各種設定」➔「<b>スタッフ設定</b>」で名簿・チーム・役職・夜勤可否・4/1時点の年休日数を登録します。</p>
+                            </div>
+                            <button @click="activeTab = 'staff'" class="mt-3 w-full py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg font-bold transition">スタッフ設定を開く</button>
+                        </div>
+
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <span class="bg-indigo-600 text-white font-black px-2 py-0.5 rounded text-[10px]">STEP 2</span>
+                                <h4 class="font-bold text-slate-800 text-sm mt-2 mb-1">ルール・人数設定</h4>
+                                <p class="text-slate-600 leading-relaxed">「<b>勤務設定</b>」「<b>勤務ルール</b>」「<b>自動生成設定</b>」で4週基準日・禁止ペア・曜日別必要人数を設定します。</p>
+                            </div>
+                            <button @click="activeTab = 'autoGenConfig'" class="mt-3 w-full py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg font-bold transition">自動生成設定を開く</button>
+                        </div>
+
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <span class="bg-amber-500 text-white font-black px-2 py-0.5 rounded text-[10px]">STEP 3</span>
+                                <h4 class="font-bold text-slate-800 text-sm mt-2 mb-1">希望休の入力・反映</h4>
+                                <p class="text-slate-600 leading-relaxed">「<b>希望入力</b>」タブでスタッフの休み希望や研修・委員会を入力し、勤務表の「<b>希望反映</b>」を押します。</p>
+                            </div>
+                            <button @click="activeTab = 'requests'" class="mt-3 w-full py-1.5 bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 rounded-lg font-bold transition">希望入力を開く</button>
+                        </div>
+
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <span class="bg-emerald-600 text-white font-black px-2 py-0.5 rounded text-[10px]">STEP 4</span>
+                                <h4 class="font-bold text-slate-800 text-sm mt-2 mb-1">自動生成＆手直し</h4>
+                                <p class="text-slate-600 leading-relaxed">「<b>自動生成</b>」ボタンでシフトを作成！その後スタンプ機能で微調整し、「<b>ルールチェック</b>」で確認します。</p>
+                            </div>
+                            <button @click="activeTab = 'main'" class="mt-3 w-full py-1.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg font-bold transition">勤務表を開く</button>
+                        </div>
+
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <span class="bg-slate-700 text-white font-black px-2 py-0.5 rounded text-[10px]">STEP 5</span>
+                                <h4 class="font-bold text-slate-800 text-sm mt-2 mb-1">確認・印刷・保存</h4>
+                                <p class="text-slate-600 leading-relaxed">「<b>勤務者確認</b>」で日別のメンバーをチェックし、印刷やJSONバックアップ保存を行います。</p>
+                            </div>
+                            <button @click="activeTab = 'dailyStaff'" class="mt-3 w-full py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-bold transition">勤務者確認を開く</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Feature Explanations -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Operation & Stamp Tips -->
+                    <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                        <h3 class="font-extrabold text-slate-800 text-sm flex items-center border-b border-slate-100 pb-2">
+                            <i class="fa-solid fa-stamp text-indigo-600 mr-2"></i>勤務表の入力・スタンプ操作のコツ
+                        </h3>
+                        <ul class="space-y-2.5 text-xs text-slate-600 leading-relaxed">
+                            <li class="flex items-start">
+                                <span class="bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.5 rounded mr-2 shrink-0">基本入力</span>
+                                <span>画面上部のスタンプ（または移動可能なフロートパレット）から記号を選び、表のマスをクリックすると入力できます。<b>ダブルクリック</b>するとそのマスを消去できます。</span>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.5 rounded mr-2 shrink-0">＜＞ 2日一括</span>
+                                <span>「<b>＜＞ 入り・明け</b>」スタンプを選ぶと、クリックした日に「＜（入り）」、その翌日に「＞（明け）」をワンクリックで同時にセットできます。</span>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded mr-2 shrink-0">なぞり入力</span>
+                                <span>連続して同じ記号を入れたいときは「<b>なぞり: ON</b>」に切り替えると、マウスを押したままスライドするだけで連続入力できます（普段は誤入力防止のためOFFになっています）。</span>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded mr-2 shrink-0">年休残日数</span>
+                                <span>勤務表の左側の「<b>氏名</b>」にマウスカーソルを合わせると、4月1日時点の年休から前月末までの消化数を引いた<b>残日数</b>がポップアップ表示されます。</span>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="bg-rose-100 text-rose-800 font-bold px-1.5 py-0.5 rounded mr-2 shrink-0">希望との照合</span>
+                                <span>希望入力されたマスには右上に小さく「希:休」等のバッジがつきます。希望と異なる勤務が入った場合は<b>赤く点滅</b>して知らせます（「休」希望に対しては ○・年・◎ のどれを入れてもOKになります）。</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Settings & Rules Explanation -->
+                    <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+                        <h3 class="font-extrabold text-slate-800 text-sm flex items-center border-b border-slate-100 pb-2">
+                            <i class="fa-solid fa-sliders text-emerald-600 mr-2"></i>「各種設定」メニューの役割
+                        </h3>
+                        <ul class="space-y-2.5 text-xs text-slate-600 leading-relaxed">
+                            <li class="flex items-start">
+                                <span class="bg-sky-100 text-sky-900 font-bold px-2 py-0.5 rounded mr-2 shrink-0">1. スタッフ設定</span>
+                                <span>スタッフの追加・並び替え、チーム色分け、役職、<b>夜勤の可否・月上限回数</b>を設定します。CSVファイルでの一括入出力も可能です。※役職が「<b>補助者</b>」の方は自動生成および下部の日勤・夜勤カウントから自動的に除外されます。</span>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded mr-2 shrink-0">2. 勤務設定</span>
+                                <span><b>4週間サイクルの基準開始日</b>（28日ごとの太線と4週8休の計算基準）と、勤務記号の色や名称をカスタマイズできます。</span>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="bg-rose-100 text-rose-900 font-bold px-2 py-0.5 rounded mr-2 shrink-0">3. 勤務ルール</span>
+                                <span>「<b>同日勤務のNGペア</b>（例：看護（基礎）同士の夜勤禁止、特定の個人同士のペア禁止）」や「連続勤務上限」「禁止シフト並び（明け→日勤など）」を設定します。</span>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded mr-2 shrink-0">4. 自動生成設定</span>
+                                <span>日本看護協会ガイドラインに準拠した基準、曜日別の必要人数、<b>4週8休制（祝日別枠）</b>、<b>祝日出勤時の振替（◎）有無</b>、夜勤数や連休数の<b>公平化プロトコル</b>を細かく設定できます。</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Data Save & Backup Box -->
+                <div class="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-indigo-950">
+                    <div class="space-y-1">
+                        <div class="font-extrabold flex items-center text-sm"><i class="fa-solid fa-floppy-disk text-indigo-600 mr-2"></i>データの自動保存とバックアップ・病棟切替について</div>
+                        <p class="text-indigo-800 leading-relaxed">
+                            入力した内容はブラウザ内に<b>自動保存</b>されます。画面右上の「<b>病棟:</b>」欄に「B病棟」など別の名前を入れると、複数の病棟の勤務表を別々に管理できます。<br>
+                            別のパソコンへデータを移したい場合や定期バックアップには、画面右上の「<b>JSON</b>（ダウンロード）」ボタンでファイルを保存し、「<b>読込</b>」から復元してください。
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const activeTab = ref('main');
+                const isSettingsDropdownOpen = ref(false);
+                const notificationMessage = ref('');
+                const currentRoomId = ref('A病棟');
+                
+                const now = new Date();
+                const currentYear = ref(now.getFullYear());
+                const currentMonth = ref(now.getMonth() + 1);
+
+                const isRuleCheckActive = ref(false);
+                // Safe default: Paint mode is OFF initially
+                const isPaintModeEnabled = ref(false);
+                const selectedSymbol = ref('‥');
+                const selectedRequestSymbol = ref('休');
+                const cycleStartDate = ref('2026-09-01');
+
+                const showFloatingStamp = ref(true);
+                const floatingPos = reactive({ x: Math.max(16, (window.innerWidth || 1000) - 280), y: 160 });
+                let isDragging = false, dragStartPos = { x: 0, y: 0 };
+
+                const confirmDialog = reactive({ show: false, title: '', message: '', action: null });
+                const hoverTooltip = reactive({ show: false, x: 0, y: 0, staff: null });
+
+                const teamColors = reactive({
+                    pink: { dot: '#f43f5e', name: 'ピンク' },
+                    blue: { dot: '#3b82f6', name: 'ブルー' },
+                    green: { dot: '#10b981', name: 'グリーン' },
+                    orange: { dot: '#f59e0b', name: 'オレンジ' }
+                });
+
+                const defaultSymbols = [
+                    { id: 's_day', code: '‥', name: '日勤', bg: '#fef3c7', text: '#92400e', category: 'day' },
+                    { id: 's_mid', code: '中', name: '中勤', bg: '#fef08a', text: '#713f12', category: 'mid' },
+                    { id: 's_night', code: '＜', name: '入り', bg: '#e0e7ff', text: '#3730a3', category: 'night' },
+                    { id: 's_post', code: '＞', name: '明け', bg: '#f1f5f9', text: '#475569', category: 'post_night' },
+                    { id: 's_pub', code: '○', name: '公休', bg: '#d1fae5', text: '#065f46', category: 'off_pub' },
+                    { id: 's_paid', code: '年', name: '年休', bg: '#bae6fd', text: '#0369a1', category: 'off_paid' },
+                    { id: 's_hol', code: '◎', name: '祝休', bg: '#f3e8ff', text: '#6b21a8', category: 'off_hol' },
+                    { id: 's_comm', code: '委', name: '委員会', bg: '#e0f2fe', text: '#075985', category: 'committee' },
+                    { id: 's_train', code: '研', name: '研修', bg: '#ccfbf1', text: '#115e59', category: 'training' }
+                ];
+                const symbols = reactive([...defaultSymbols]);
+
+                const requestPresetSymbols = reactive([
+                    { code: '‥', bg: '#fef3c7', text: '#92400e' },
+                    { code: '委', bg: '#e0f2fe', text: '#075985' },
+                    { code: '研', bg: '#ccfbf1', text: '#115e59' },
+                    { code: '休', bg: '#d1fae5', text: '#065f46' },
+                    { code: '年', bg: '#bae6fd', text: '#0369a1' }
+                ]);
+
+                const defaultStaffList = [
+                    { id: 'st_1', name: '佐藤 恵子', teamName: 'pink', role: '看護師長', initialLeaveDays: 20, canNight: false, maxNightPerMonth: 0 },
+                    { id: 'st_2', name: '鈴木 明美', teamName: 'blue', role: '副看護師長', initialLeaveDays: 20, canNight: true, maxNightPerMonth: 4 },
+                    { id: 'st_3', name: '高橋 健太', teamName: 'green', role: '主任', initialLeaveDays: 20, canNight: true, maxNightPerMonth: 4 },
+                    { id: 'st_4', name: '田中 美穂', teamName: 'orange', role: '看護師', initialLeaveDays: 20, canNight: true, maxNightPerMonth: 5 },
+                    { id: 'st_5', name: '伊藤 直樹', teamName: 'pink', role: '看護師', initialLeaveDays: 20, canNight: true, maxNightPerMonth: 5 },
+                    { id: 'st_6', name: '渡辺 真理', teamName: 'blue', role: '看護師', initialLeaveDays: 20, canNight: true, maxNightPerMonth: 5 },
+                    { id: 'st_7', name: '山本 裕子', teamName: 'green', role: '看護師', initialLeaveDays: 18, canNight: true, maxNightPerMonth: 5 },
+                    { id: 'st_8', name: '中村 翔太', teamName: 'orange', role: '看護師', initialLeaveDays: 18, canNight: true, maxNightPerMonth: 5 },
+                    { id: 'st_9', name: '木村 彩花', teamName: 'pink', role: '看護（基礎）', initialLeaveDays: 10, canNight: true, maxNightPerMonth: 4 },
+                    { id: 'st_10', name: '林 智之', teamName: 'blue', role: '看護（基礎）', initialLeaveDays: 10, canNight: true, maxNightPerMonth: 4 },
+                    { id: 'st_11', name: '山崎 舞', teamName: 'green', role: '補助者', initialLeaveDays: 15, canNight: false, maxNightPerMonth: 0 },
+                ];
+                const staffList = reactive(JSON.parse(JSON.stringify(defaultStaffList)));
+
+                const rosterData = reactive({});
+                const requestData = reactive({});
+                
+                const defaultRules = {
+                    maxConsecutiveWorkDays: 5,
+                    ngCombos: [['GRP_night', '‥'], ['＞', '‥'], ['＞', '＜'], ['中', '‥']],
+                    staffNgPairs: [{ id: 'sp_1', type1: 'role', val1: '看護（基礎）', type2: 'role', val2: '看護（基礎）', shiftScope: 'night' }]
+                };
+                const rules = reactive(JSON.parse(JSON.stringify(defaultRules)));
+
+                const defaultAutoGenConfig = {
+                    enforceForwardRotation: true,       // 基準1・10: 正循環の交代周期・逆循環禁止
+                    defaultMaxNightCount: 5,            // 基準3: 月間夜勤（入り）回数上限
+                    forbidConsecutiveNightBlocks: true, // 基準4: 連続夜勤ブロック（＜＞＜＞）の禁止
+                    restDaysAfterPostNight: 1,          // 基準8: 夜勤明け後の必須休日数（1日 or 2日）
+                    ensureMonthlyWeekendOff: true,      // 基準9: 月1回以上の土日連休（金夜勤なし＋土日休）
+                    offDaysPer4Weeks: 8,                // 4週間（28日）あたりの公休（○）数（祝日◎は含まない）
+                    preferTwoOffPerWeek: true,          // 日曜〜土曜の間に公休（○）2つを目安にする（絶対ではない）
+                    enableMaxOffInterval: false,        // 公休の間隔に日数制限をつけるか
+                    maxOffIntervalDays: 5,              // 公休から次の公休までの最大日数間隔
+                    compensateHolidayWork: true,        // 祝日勤務をした際に必ず祝休（◎）を振り替えるか
+                    enforceFairness: true,              // 夜勤回数・連休数の公平化プロトコル
+                    targetMonthlyOffDays: 8,            // 互換用
+                    overwriteExisting: false,           // 空欄のみ埋めるか再生成するか
+                    headNurseWeekdayOnly: true,         // 看護師長は平日日勤・土日祝休
+                    excludeAssistantFromNight: true,    // 補助者は自動生成・カウント対象外
+                    balanceNightTeams: true,            // 夜勤のチーム分散とNGペア回避
+                    reqStaff: {
+                        weekday:  { day: 4, mid: 1, night: 2 },
+                        saturday: { day: 3, mid: 0, night: 2 },
+                        holiday:  { day: 2, mid: 0, night: 2 }
+                    }
+                };
+                const autoGenConfig = reactive(JSON.parse(JSON.stringify(defaultAutoGenConfig)));
+
+                const applyJnaStandardPreset = () => {
+                    Object.assign(autoGenConfig, JSON.parse(JSON.stringify(defaultAutoGenConfig)));
+                    rules.maxConsecutiveWorkDays = 5;
+                    autoSave();
+                    showToast('日本看護協会ガイドライン推奨基準をセットしました');
+                };
+
+                const newNgComboLength = ref(2);
+                const newNgComboSymbols = reactive(['', '', '']);
+                const newStaffRule = reactive({ type1: 'role', val1: '看護（基礎）', type2: 'role', val2: '看護（基礎）', shiftScope: 'night' });
+
+                const groupOptions = [
+                    { label: '【グループ】日勤(‥)', value: 'GRP_day' },
+                    { label: '【グループ】入り(＜)', value: 'GRP_night' },
+                    { label: '【グループ】明け(＞)', value: 'GRP_post_night' },
+                    { label: '【グループ】全休(○/年/◎)', value: 'GRP_holiday' },
+                ];
+
+                const toggleSettingsDropdown = () => isSettingsDropdownOpen.value = !isSettingsDropdownOpen.value;
+                const selectTabFromMenu = (t) => { activeTab.value = t; isSettingsDropdownOpen.value = false; };
+                const closeDropdowns = () => isSettingsDropdownOpen.value = false;
+                const showToast = (msg) => { 
+                    notificationMessage.value = msg; 
+                    setTimeout(() => { if (notificationMessage.value === msg) notificationMessage.value = ''; }, 3200); 
+                };
+
+                // Japanese National Holidays Calculation
+                const getJapaneseHoliday = (y, m, d, dow) => {
+                    const vernal = Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+                    const autumnal = Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+                    if (m === 1 && d === 1) return '元日';
+                    if (m === 1 && dow === 1 && Math.ceil(d / 7) === 2) return '成人の日';
+                    if (m === 2 && d === 11) return '建国記念の日';
+                    if (m === 2 && d === 23) return '天皇誕生日';
+                    if (m === 3 && d === vernal) return '春分の日';
+                    if (m === 4 && d === 29) return '昭和の日';
+                    if (m === 5 && d === 3) return '憲法記念日';
+                    if (m === 5 && d === 4) return 'みどりの日';
+                    if (m === 5 && d === 5) return 'こどもの日';
+                    if (m === 7 && dow === 1 && Math.ceil(d / 7) === 3) return '海の日';
+                    if (m === 8 && d === 11) return '山の日';
+                    if (m === 9 && dow === 1 && Math.ceil(d / 7) === 3) return '敬老の日';
+                    if (m === 9 && d === autumnal) return '秋分の日';
+                    if (m === 10 && dow === 1 && Math.ceil(d / 7) === 2) return 'スポーツの日';
+                    if (m === 11 && d === 3) return '文化の日';
+                    if (m === 11 && d === 23) return '勤労感謝の日';
+                    if (dow === 1) {
+                        const yst = new Date(y, m - 1, d - 1);
+                        if (yst.getDay() === 0 && getJapaneseHoliday(yst.getFullYear(), yst.getMonth() + 1, yst.getDate(), 0)) return '振替休日';
+                    }
+                    return '';
+                };
+
+                const daysInMonth = computed(() => {
+                    const y = currentYear.value, m = currentMonth.value, res = [];
+                    let base = new Date(cycleStartDate.value);
+                    if (isNaN(base.getTime())) base = new Date('2026-09-01');
+                    base.setHours(0,0,0,0);
+                    
+                    const pushD = (dt, isCur) => {
+                        const yn = dt.getFullYear(), mn = dt.getMonth() + 1, dn = dt.getDate(), dow = dt.getDay();
+                        const h = getJapaneseHoliday(yn, mn, dn, dow);
+                        const diff = Math.floor((dt.getTime() - base.getTime()) / 86400000);
+                        res.push({ 
+                            dateStr: `${yn}-${String(mn).padStart(2,'0')}-${String(dn).padStart(2,'0')}`, 
+                            monthNum: mn, 
+                            dayNum: dn, 
+                            dayOfWeek: dow, 
+                            dayName: ['日','月','火','水','木','金','土'][dow], 
+                            isCurrentMonth: isCur, 
+                            isHoliday: Boolean(h), 
+                            holidayName: h, 
+                            is4WeekThick: diff >= 0 && (diff + 1) % 28 === 0 
+                        });
+                    };
+                    const prevL = new Date(y, m - 1, 0).getDate();
+                    for (let i = 2; i >= 0; i--) pushD(new Date(y, m - 2, prevL - i), false);
+                    const tot = new Date(y, m, 0).getDate();
+                    for (let i = 1; i <= tot; i++) pushD(new Date(y, m - 1, i), true);
+                    for (let i = 1; i <= 3; i++) pushD(new Date(y, m, i), false);
+                    return res;
+                });
+
+                const getSymbolObj = (c) => symbols.find(s => s.code === c);
+                const getSymbolStyle = (c) => { const s = getSymbolObj(c); return s ? { backgroundColor: s.bg, color: s.text } : { backgroundColor: '#f1f5f9', color: '#475569' }; };
+                const getRequestSymbolStyle = (c) => { if (c === '休') return { backgroundColor: '#d1fae5', color: '#065f46' }; const s = getSymbolObj(c); return s ? { backgroundColor: s.bg, color: s.text } : { backgroundColor: '#fef3c7', color: '#92400e' }; };
+                const getTeamColor = (t) => teamColors[t] || { dot: '#94a3b8' };
+                const getRosterSymbol = (id, dStr) => rosterData[id]?.[dStr] || '';
+                const getRequestSymbol = (id, dStr) => requestData[id]?.[dStr] || '';
+                const getStaffNameById = (id) => staffList.find(s => s.id === id)?.name || '不明';
+                const getShiftScopeLabel = (scp) => ({ night: '夜勤同時禁止', day: '日/中同時禁止', any: '同日出勤禁止' }[scp] || scp);
+
+                const isPainting = ref(false);
+                const getNextDateStr = (dStr) => { 
+                    const [y,m,d] = dStr.split('-'); 
+                    const dt = new Date(y, m - 1, parseInt(d) + 1); 
+                    return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; 
+                };
+                const applyStamp = (id, dStr) => {
+                    if (!rosterData[id]) rosterData[id] = {};
+                    if (selectedSymbol.value === '＜＞') { 
+                        rosterData[id][dStr] = '＜'; 
+                        rosterData[id][getNextDateStr(dStr)] = '＞'; 
+                    } else if (selectedSymbol.value) {
+                        rosterData[id][dStr] = selectedSymbol.value;
+                    } else {
+                        delete rosterData[id][dStr];
+                    }
+                    autoSave();
+                };
+                const startPaint = (e, id, ds) => { 
+                    if (e && e.button !== undefined && e.button !== 0) return;
+                    if (isPaintModeEnabled.value) {
+                        if (e && e.cancelable) e.preventDefault();
+                        isPainting.value = true;
+                    }
+                    applyStamp(id, ds); 
+                };
+                const onCellMouseEnter = (e, id, ds) => { 
+                    if (!isPaintModeEnabled.value || !isPainting.value) return;
+                    // Verify mouse button is still pressed
+                    if (e && e.buttons !== undefined && e.buttons !== 1) {
+                        isPainting.value = false;
+                        return;
+                    }
+                    applyStamp(id, ds); 
+                };
+                const stopPaint = () => {
+                    isPainting.value = false;
+                };
+                const cellClicked = (id, ds) => {
+                    if (!isPaintModeEnabled.value) {
+                        applyStamp(id, ds);
+                    }
+                };
+                const cellDblClicked = (id, ds) => { if (rosterData[id]) { delete rosterData[id][ds]; autoSave(); } };
+                const requestCellClicked = (id, ds) => { 
+                    if (!requestData[id]) requestData[id] = {}; 
+                    if (selectedRequestSymbol.value) requestData[id][ds] = selectedRequestSymbol.value; 
+                    else delete requestData[id][ds]; 
+                    autoSave(); 
+                };
+                const requestCellDblClicked = (id, ds) => { if (requestData[id]) { delete requestData[id][ds]; autoSave(); } };
+                const selectSymbol = (c) => selectedSymbol.value = c;
+
+                const isMismatch = (id, ds) => {
+                    const req = getRequestSymbol(id, ds), ros = getRosterSymbol(id, ds);
+                    if (!req || !ros) return false;
+                    if (req === '休') return !['off_pub','off_paid','off_hol','off_holiday'].includes(getSymbolObj(ros)?.category);
+                    return req !== ros;
+                };
+
+                const getStaffCategoryCount = (id, cat) => {
+                    if (!rosterData[id]) return 0;
+                    return daysInMonth.value.filter(d => d.isCurrentMonth).reduce((acc, d) => {
+                        const sym = getSymbolObj(rosterData[id][d.dateStr]);
+                        if (!sym) return acc;
+                        if (cat === 'day' && sym.category === 'day') return acc + 1;
+                        if (cat === 'off_pub' && (sym.category === 'off_pub' || sym.code === '○')) return acc + 1;
+                        if (cat === 'off_paid' && (sym.category === 'off_paid' || sym.code === '年')) return acc + 1;
+                        if (cat === 'off_hol' && (sym.category === 'off_hol' || sym.code === '◎')) return acc + 1;
+                        return sym.category === cat ? acc + 1 : acc;
+                    }, 0);
+                };
+
+                // Daily shift count strictly excludes '補助者' (Assistants)
+                const getDailyShiftCount = (ds, cat) => staffList.reduce((acc, s) => { 
+                    if (s.role === '補助者') return acc;
+                    const sym = getSymbolObj(rosterData[s.id]?.[ds]); 
+                    return sym && sym.category === cat ? acc + 1 : acc; 
+                }, 0);
+                
+                const getStaffRequestCount = (id) => daysInMonth.value.filter(d => d.isCurrentMonth && requestData[id]?.[d.dateStr]).length;
+
+                // Floating Stamp Dragging
+                const startDrag = (e) => {
+                    isDragging = true;
+                    dragStartPos = { 
+                        x: (e.touches ? e.touches[0].clientX : e.clientX) - floatingPos.x, 
+                        y: (e.touches ? e.touches[0].clientY : e.clientY) - floatingPos.y 
+                    };
+                    window.addEventListener('mousemove', onDrag); window.addEventListener('mouseup', stopDrag);
+                    window.addEventListener('touchmove', onDrag); window.addEventListener('touchend', stopDrag);
+                };
+                const onDrag = (e) => {
+                    if (!isDragging) return;
+                    let nx = (e.touches ? e.touches[0].clientX : e.clientX) - dragStartPos.x;
+                    let ny = (e.touches ? e.touches[0].clientY : e.clientY) - dragStartPos.y;
+                    floatingPos.x = Math.max(10, Math.min(window.innerWidth - 260, nx));
+                    floatingPos.y = Math.max(10, Math.min(window.innerHeight - 200, ny));
+                };
+                const stopDrag = () => { 
+                    isDragging = false; 
+                    window.removeEventListener('mousemove', onDrag); window.removeEventListener('mouseup', stopDrag); 
+                    window.removeEventListener('touchmove', onDrag); window.removeEventListener('touchend', stopDrag); 
+                };
+
+                // Portal Tooltip for Paid Leave
+                const showStaffTooltip = (e, st) => {
+                    hoverTooltip.staff = st;
+                    const r = e.currentTarget.getBoundingClientRect();
+                    hoverTooltip.x = Math.min(r.right + 10, window.innerWidth - 270);
+                    hoverTooltip.y = Math.min(r.top - 5, window.innerHeight - 150);
+                    hoverTooltip.show = true;
+                };
+                const hideStaffTooltip = () => hoverTooltip.show = false;
+
+                const getTargetFiscalYear = (y, m) => m >= 4 ? y : y - 1;
+                const getPriorUsedLeaveDays = (id, cy, cm) => {
+                    if (!rosterData[id] || !id) return 0;
+                    const fy = getTargetFiscalYear(cy, cm);
+                    if (cm === 4 && cy === fy) return 0;
+                    const end = new Date(cy, cm - 1, 0), endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
+                    return Object.entries(rosterData[id]).filter(([ds, c]) => ds >= `${fy}-04-01` && ds <= endStr && (getSymbolObj(c)?.category === 'off_paid' || c === '年')).length;
+                };
+                const getStaffLeaveInfo = (st, cy, cm) => {
+                    if (!st) return { initial: 0, usedPrior: 0, remaining: 0 };
+                    const ini = st.initialLeaveDays ?? 20;
+                    const used = getPriorUsedLeaveDays(st.id, cy, cm);
+                    return { initial: ini, usedPrior: used, remaining: Math.max(0, ini - used) };
+                };
+                // Clear Confirmation Handlers (Strictly Current Month Only)
+                const askClearRoster = () => { confirmDialog.title = '勤務表の全消去（当月のみ）'; confirmDialog.message = `${currentYear.value}年${currentMonth.value}月の勤務シフトのみを全消去します（前月・翌月は消去されません）。よろしいですか？`; confirmDialog.action = 'roster'; confirmDialog.show = true; };
+                const askClearRequests = () => { confirmDialog.title = '希望入力の全消去（当月のみ）'; confirmDialog.message = `${currentYear.value}年${currentMonth.value}月の希望入力のみを全消去します（前月・翌月は消去されません）。よろしいですか？`; confirmDialog.action = 'req'; confirmDialog.show = true; };
+                const executeConfirmAction = () => {
+                    const ymPrefix = `${currentYear.value}-${String(currentMonth.value).padStart(2, '0')}-`;
+                    daysInMonth.value.filter(d => d.isCurrentMonth && d.dateStr.startsWith(ymPrefix)).forEach(d => staffList.forEach(s => {
+                        if (confirmDialog.action === 'roster' && rosterData[s.id]) delete rosterData[s.id][d.dateStr];
+                        if (confirmDialog.action === 'req' && requestData[s.id]) delete requestData[s.id][d.dateStr];
+                    }));
+                    autoSave(); confirmDialog.show = false; showToast(`${currentMonth.value}月分の全消去を実行しました`);
+                };
+
+                // Storage Management with Fail-Safe Self-Healing
+                const autoSave = () => {
+                    try {
+                        localStorage.setItem(`nurse_app_data_${currentRoomId.value}`, JSON.stringify({
+                            roomId: currentRoomId.value,
+                            staffList: [...staffList],
+                            symbols: [...symbols],
+                            rosterData: { ...rosterData },
+                            requestData: { ...requestData },
+                            rules: { ...rules },
+                            autoGenConfig: { ...autoGenConfig },
+                            cycleStartDate: cycleStartDate.value
+                        }));
+                    } catch(e) {
+                        console.error('Save error', e);
+                    }
+                };
+                const manualSave = () => { autoSave(); showToast('データを保存しました'); };
+
+                const resetToDefaultData = () => {
+                    try {
+                        localStorage.removeItem(`nurse_app_data_${currentRoomId.value}`);
+                        staffList.splice(0, staffList.length, ...JSON.parse(JSON.stringify(defaultStaffList)));
+                        symbols.splice(0, symbols.length, ...JSON.parse(JSON.stringify(defaultSymbols)));
+                        Object.keys(rosterData).forEach(k => delete rosterData[k]);
+                        Object.keys(requestData).forEach(k => delete requestData[k]);
+                        Object.assign(rules, JSON.parse(JSON.stringify(defaultRules)));
+                        Object.assign(autoGenConfig, JSON.parse(JSON.stringify(defaultAutoGenConfig)));
+                        cycleStartDate.value = '2026-09-01';
+                        showToast('データを初期状態に復旧しました');
+                    } catch(e) {
+                        console.error('Reset error', e);
+                    }
+                };
+
+                const onRoomChanged = () => {
+                    try {
+                        const sv = localStorage.getItem(`nurse_app_data_${currentRoomId.value}`);
+                        if (sv) {
+                            const d = JSON.parse(sv);
+                            if (d && Array.isArray(d.staffList)) {
+                                staffList.splice(0, staffList.length, ...d.staffList.map(st => ({
+                                    canNight: st.role !== '看護師長' && st.role !== '補助者',
+                                    maxNightPerMonth: (st.role === '看護師長' || st.role === '補助者') ? 0 : 5,
+                                    ...st
+                                })));
+                            }
+                            if (d && Array.isArray(d.symbols)) symbols.splice(0, symbols.length, ...d.symbols);
+                            if (d && d.rosterData) { Object.keys(rosterData).forEach(k => delete rosterData[k]); Object.assign(rosterData, d.rosterData); }
+                            if (d && d.requestData) { Object.keys(requestData).forEach(k => delete requestData[k]); Object.assign(requestData, d.requestData); }
+                            if (d && d.rules) Object.assign(rules, d.rules);
+                            if (d && d.autoGenConfig) {
+                                Object.assign(autoGenConfig, JSON.parse(JSON.stringify(defaultAutoGenConfig)), d.autoGenConfig);
+                                if (d.autoGenConfig.reqStaff) {
+                                    autoGenConfig.reqStaff = {
+                                        weekday: { ...defaultAutoGenConfig.reqStaff.weekday, ...(d.autoGenConfig.reqStaff.weekday || {}) },
+                                        saturday: { ...defaultAutoGenConfig.reqStaff.saturday, ...(d.autoGenConfig.reqStaff.saturday || {}) },
+                                        holiday: { ...defaultAutoGenConfig.reqStaff.holiday, ...(d.autoGenConfig.reqStaff.holiday || {}) }
+                                    };
+                                }
+                            }
+                            if (d && d.cycleStartDate) cycleStartDate.value = d.cycleStartDate;
+                            showToast('データを読み込みました');
+                        } else {
+                            showToast('新規病棟に切り替えました');
+                        }
+                    } catch(e) {
+                        console.warn('Recovering from damaged storage data', e);
+                        resetToDefaultData();
+                    }
+                };
+
+                const changeMonth = (delta) => {
+                    let m = currentMonth.value + delta;
+                    let y = currentYear.value;
+                    if (m > 12) { m = 1; y++; }
+                    if (m < 1) { m = 12; y--; }
+                    currentYear.value = y;
+                    currentMonth.value = m;
+                };
+
+                const syncRequestsToRoster = () => {
+                    let cnt = 0;
+                    daysInMonth.value.filter(d => d.isCurrentMonth).forEach(d => {
+                        staffList.forEach(s => {
+                            const req = requestData[s.id]?.[d.dateStr];
+                            if (req) {
+                                if (!rosterData[s.id]) rosterData[s.id] = {};
+                                rosterData[s.id][d.dateStr] = req === '休' ? (d.isHoliday ? '◎' : '○') : req;
+                                cnt++;
+                            }
+                        });
+                    });
+                    autoSave();
+                    showToast(`${cnt}件の希望を勤務表に反映しました`);
+                };
+
+                function matchSymbolOrGroup(code, target) {
+                    if (!code) return false;
+                    if (code === target) return true;
+                    const sym = getSymbolObj(code);
+                    if (!sym) return false;
+                    if (target === 'GRP_day' && sym.category === 'day') return true;
+                    if (target === 'GRP_night' && sym.category === 'night') return true;
+                    if (target === 'GRP_post_night' && sym.category === 'post_night') return true;
+                    if (target === 'GRP_holiday' && ['off_pub', 'off_paid', 'off_hol', 'off_holiday'].includes(sym.category)) return true;
+                    return false;
+                }
+
+                const ruleViolations = computed(() => {
+                    if (!isRuleCheckActive.value) return {};
+                    const v = {};
+                    const dates = daysInMonth.value;
+                    staffList.forEach(s => {
+                        v[s.id] = {};
+                        let consec = 0;
+                        dates.forEach(d => {
+                            const code = rosterData[s.id]?.[d.dateStr];
+                            if (isWorkShift(code)) {
+                                consec++;
+                                if (consec > rules.maxConsecutiveWorkDays) {
+                                    v[s.id][d.dateStr] = true;
+                                }
+                            } else {
+                                consec = 0;
+                            }
+                        });
+                        rules.ngCombos.forEach(combo => {
+                            const len = combo.length;
+                            for (let i = 0; i <= dates.length - len; i++) {
+                                let match = true;
+                                for (let j = 0; j < len; j++) {
+                                    if (!matchSymbolOrGroup(rosterData[s.id]?.[dates[i + j].dateStr], combo[j])) {
+                                        match = false;
+                                        break;
+                                    }
+                                }
+                                if (match) {
+                                    for (let j = 0; j < len; j++) {
+                                        v[s.id][dates[i + j].dateStr] = true;
+                                    }
+                                }
+                            }
+                        });
+                    });
+                    return v;
+                });
+
+                const violationCount = computed(() => {
+                    if (!isRuleCheckActive.value) return 0;
+                    let cnt = 0;
+                    Object.values(ruleViolations.value).forEach(map => {
+                        cnt += Object.keys(map).length;
+                    });
+                    return cnt;
+                });
+
+                const dailyStaffList = computed(() => {
+                    return daysInMonth.value.filter(d => d.isCurrentMonth).map(d => {
+                        const dayStaff = [];
+                        const nightStaff = [];
+                        const allWorking = [];
+
+                        staffList.forEach(s => {
+                            const code = rosterData[s.id]?.[d.dateStr];
+                            if (!code) return;
+                            const sym = getSymbolObj(code);
+                            if (!sym) return;
+                            const item = { id: s.id, name: s.name, teamName: s.teamName, role: s.role, shift: code, category: sym.category };
+                            if (['day', 'mid', 'committee', 'training'].includes(sym.category)) {
+                                dayStaff.push(item);
+                                allWorking.push(item);
+                            } else if (sym.category === 'night') {
+                                nightStaff.push(item);
+                                allWorking.push(item);
+                            }
+                        });
+
+                        const violations = [];
+                        const violatingStaffIds = [];
+                        for (let i = 0; i < allWorking.length; i++) {
+                            for (let j = i + 1; j < allWorking.length; j++) {
+                                const a = allWorking[i];
+                                const b = allWorking[j];
+                                rules.staffNgPairs.forEach(r => {
+                                    const m1 = (r.type1 === 'staff' && r.val1 === a.id) || (r.type1 === 'role' && r.val1 === a.role);
+                                    const m2 = (r.type2 === 'staff' && r.val2 === b.id) || (r.type2 === 'role' && r.val2 === b.role);
+                                    const rm1 = (r.type1 === 'staff' && r.val1 === b.id) || (r.type1 === 'role' && r.val1 === b.role);
+                                    const rm2 = (r.type2 === 'staff' && r.val2 === a.id) || (r.type2 === 'role' && r.val2 === a.role);
+                                    if ((m1 && m2) || (rm1 && rm2)) {
+                                        const bothNight = a.category === 'night' && b.category === 'night';
+                                        const bothDay = ['day', 'mid', 'committee', 'training'].includes(a.category) && ['day', 'mid', 'committee', 'training'].includes(b.category);
+                                        if (
+                                            (r.shiftScope === 'night' && bothNight) ||
+                                            (r.shiftScope === 'day' && bothDay) ||
+                                            (r.shiftScope === 'any')
+                                        ) {
+                                            violations.push({
+                                                reason: getShiftScopeLabel(r.shiftScope),
+                                                targetA: `${a.name}[${a.shift}]`,
+                                                targetB: `${b.name}[${b.shift}]`
+                                            });
+                                            if (!violatingStaffIds.includes(a.id)) violatingStaffIds.push(a.id);
+                                            if (!violatingStaffIds.includes(b.id)) violatingStaffIds.push(b.id);
+                                        }
+                                    }
+                                });
+                            }
+                        }
+
+                        return { ...d, dayStaff, nightStaff, violations, violatingStaffIds };
+                    });
+                });
+
+                const dailyViolationsTotalCount = computed(() => {
+                    return dailyStaffList.value.reduce((acc, d) => acc + d.violations.length, 0);
+                });
+
+                const isPairViolatingScope = (st1, st2, scope) => {
+                    return rules.staffNgPairs.some(r => {
+                        const m1 = (r.type1 === 'staff' && r.val1 === st1.id) || (r.type1 === 'role' && r.val1 === st1.role);
+                        const m2 = (r.type2 === 'staff' && r.val2 === st2.id) || (r.type2 === 'role' && r.val2 === st2.role);
+                        const rm1 = (r.type1 === 'staff' && r.val1 === st2.id) || (r.type1 === 'role' && r.val1 === st2.role);
+                        const rm2 = (r.type2 === 'staff' && r.val2 === st1.id) || (r.type2 === 'role' && r.val2 === st1.role);
+                        if ((m1 && m2) || (rm1 && rm2)) {
+                            return r.shiftScope === scope || r.shiftScope === 'any';
+                        }
+                        return false;
+                    });
+                };
+
+                const isWorkShift = (code) => {
+                    if (!code) return false;
+                    const sym = getSymbolObj(code);
+                    return sym ? ['day', 'mid', 'night', 'post_night', 'committee', 'training'].includes(sym.category) : false;
+                };
+
+                const isOffShift = (code) => {
+                    if (!code) return false;
+                    const sym = getSymbolObj(code);
+                    return sym ? ['off_pub', 'off_paid', 'off_hol', 'off_holiday'].includes(sym.category) : ['○', '年', '◎'].includes(code);
+                };
+
+                const isPublicOffShift = (code) => {
+                    if (!code) return false;
+                    const sym = getSymbolObj(code);
+                    return sym ? (sym.category === 'off_pub' || sym.code === '○') : code === '○';
+                };
+
+                const formatDateStr = (dt) => {
+                    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                };
+
+                // Calculate the 28-day cycle window (start and end Date objects) containing a given dateStr
+                const get4WeekCycleDates = (dateStr) => {
+                    let base = new Date(cycleStartDate.value);
+                    if (isNaN(base.getTime())) base = new Date('2026-09-01');
+                    base.setHours(0, 0, 0, 0);
+                    const [y, m, d] = dateStr.split('-').map(Number);
+                    const target = new Date(y, m - 1, d);
+                    target.setHours(0, 0, 0, 0);
+                    const diffDays = Math.floor((target.getTime() - base.getTime()) / 86400000);
+                    const cycleIdx = Math.floor(diffDays / 28);
+                    const startDt = new Date(base.getTime() + cycleIdx * 28 * 86400000);
+                    const dates = [];
+                    for (let i = 0; i < 28; i++) {
+                        const dt = new Date(startDt.getTime() + i * 86400000);
+                        dates.push(formatDateStr(dt));
+                    }
+                    return { cycleIdx, dates };
+                };
+
+                // Calculate Sunday-to-Saturday week date strings for a given dateStr
+                const getSunToSatWeekDates = (dateStr) => {
+                    const [y, m, d] = dateStr.split('-').map(Number);
+                    const target = new Date(y, m - 1, d);
+                    target.setHours(0, 0, 0, 0);
+                    const dow = target.getDay(); // 0 = Sun ... 6 = Sat
+                    const sunDt = new Date(target.getTime() - dow * 86400000);
+                    const dates = [];
+                    for (let i = 0; i < 7; i++) {
+                        const dt = new Date(sunDt.getTime() + i * 86400000);
+                        dates.push(formatDateStr(dt));
+                    }
+                    return dates;
+                };
+
+                const autoGenerateSchedule = () => {
+                    const allDays = daysInMonth.value;
+                    const ymPrefix = `${currentYear.value}-${String(currentMonth.value).padStart(2, '0')}-`;
+                    // Strictly target ONLY dates in the current month
+                    const curDays = allDays.filter(d => d.isCurrentMonth && d.dateStr.startsWith(ymPrefix));
+                    const curDateSet = new Set(curDays.map(d => d.dateStr));
+                    const lockedCells = {};
+
+                    // Target nursing staff ONLY (Strictly exclude '補助者' from automatic generation)
+                    const activeNursingStaff = staffList.filter(s => s.role !== '補助者');
+
+                    // Helper: Safe assignment that strictly only writes to current month dates and non-assistant staff
+                    const setShiftInCurrentMonth = (staffId, ds, code) => {
+                        const st = staffList.find(s => s.id === staffId);
+                        if (!st || st.role === '補助者') return false;
+                        if (!curDateSet.has(ds)) return false;
+                        if (lockedCells[staffId]?.[ds]) return false;
+                        if (!rosterData[staffId]) rosterData[staffId] = {};
+                        rosterData[staffId][ds] = code;
+                        return true;
+                    };
+
+                    // Step 0: Initialize & Lock Requests / Existing Cells (Current Month Only, Nursing Staff Only)
+                    activeNursingStaff.forEach(s => {
+                        if (!rosterData[s.id]) rosterData[s.id] = {};
+                        lockedCells[s.id] = {};
+                        curDays.forEach(d => {
+                            const ds = d.dateStr;
+                            const req = requestData[s.id]?.[ds];
+                            if (req) {
+                                // 公休には祝日は含まれないため、祝日の「休」希望は『◎』、それ以外は『○』
+                                rosterData[s.id][ds] = req === '休' ? (d.isHoliday ? '◎' : '○') : req;
+                                lockedCells[s.id][ds] = true;
+                            } else if (autoGenConfig.overwriteExisting) {
+                                delete rosterData[s.id][ds];
+                            } else if (rosterData[s.id][ds]) {
+                                lockedCells[s.id][ds] = true;
+                            }
+                        });
+                    });
+
+                    // Step 1: Carry over Post-Night (＞) and Rest (○) from Previous Month Last Day into Current Month Day 1 & 2
+                    const firstCurIdx = allDays.findIndex(d => d.isCurrentMonth);
+                    if (firstCurIdx > 0) {
+                        const prevLastDs = allDays[firstCurIdx - 1].dateStr;
+                        activeNursingStaff.forEach(s => {
+                            if (rosterData[s.id]?.[prevLastDs] === '＜') {
+                                const d0 = curDays[0]?.dateStr;
+                                if (d0 && !lockedCells[s.id][d0]) {
+                                    setShiftInCurrentMonth(s.id, d0, '＞');
+                                    lockedCells[s.id][d0] = true;
+                                }
+                                if (autoGenConfig.restDaysAfterPostNight >= 1 && curDays[1]) {
+                                    const d1 = curDays[1].dateStr;
+                                    if (!lockedCells[s.id][d1]) {
+                                        setShiftInCurrentMonth(s.id, d1, '○');
+                                        lockedCells[s.id][d1] = true;
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    // Step 2: Head Nurse (看護師長) Fixed Pattern (Weekday Day / Weekend ○ / Holiday ◎)
+                    if (autoGenConfig.headNurseWeekdayOnly) {
+                        activeNursingStaff.filter(s => s.role === '看護師長').forEach(s => {
+                            curDays.forEach(d => {
+                                const ds = d.dateStr;
+                                if (lockedCells[s.id][ds]) return;
+                                if (d.isHoliday) setShiftInCurrentMonth(s.id, ds, '◎');
+                                else if (d.dayOfWeek === 0 || d.dayOfWeek === 6) setShiftInCurrentMonth(s.id, ds, '○');
+                                else setShiftInCurrentMonth(s.id, ds, '‥');
+                                lockedCells[s.id][ds] = true;
+                            });
+                        });
+                    }
+
+                    // Helper: Consecutive work days before a given index in allDays
+                    const getConsecWorkBefore = (staffId, allDayIdx) => {
+                        let c = 0;
+                        for (let i = allDayIdx - 1; i >= 0; i--) {
+                            if (isWorkShift(rosterData[staffId]?.[allDays[i].dateStr])) c++;
+                            else break;
+                        }
+                        return c;
+                    };
+
+                    // Helper: Consecutive work days after a given index in allDays
+                    const getConsecWorkAfter = (staffId, allDayIdx) => {
+                        let c = 0;
+                        for (let i = allDayIdx + 1; i < allDays.length; i++) {
+                            if (isWorkShift(rosterData[staffId]?.[allDays[i].dateStr])) c++;
+                            else break;
+                        }
+                        return c;
+                    };
+
+                    // Helper: Days since last Public Off (○) before a given index in allDays
+                    const getDaysSinceLastPublicOff = (staffId, allDayIdx) => {
+                        let c = 0;
+                        for (let i = allDayIdx - 1; i >= 0; i--) {
+                            if (isPublicOffShift(rosterData[staffId]?.[allDays[i].dateStr])) break;
+                            c++;
+                        }
+                        return c;
+                    };
+
+                    // Helper: Days since last Night Shift (＜) before a given index in allDays
+                    const getDaysSinceLastNight = (staffId, allDayIdx) => {
+                        let c = 0;
+                        for (let i = allDayIdx - 1; i >= 0; i--) {
+                            if (rosterData[staffId]?.[allDays[i].dateStr] === '＜') return c;
+                            c++;
+                        }
+                        return 99;
+                    };
+
+                    // Helper: Count public off (○) in the 28-day cycle containing dateStr
+                    const get4WeekPublicOffStats = (staffId, dateStr) => {
+                        const { dates } = get4WeekCycleDates(dateStr);
+                        let assignedOff = 0;
+                        let unassignedCurrentMonthDays = 0;
+                        dates.forEach(ds => {
+                            const code = rosterData[staffId]?.[ds];
+                            if (isPublicOffShift(code)) {
+                                assignedOff++;
+                            } else if (curDateSet.has(ds) && !code) {
+                                unassignedCurrentMonthDays++;
+                            }
+                        });
+                        const assignedOrInMonthCount = dates.filter(ds => curDateSet.has(ds) || Boolean(rosterData[staffId]?.[ds])).length;
+                        const targetInKnownWindow = Math.round((autoGenConfig.offDaysPer4Weeks || 8) * (assignedOrInMonthCount / 28));
+                        return {
+                            assignedOff,
+                            targetOff: Math.max(1, targetInKnownWindow),
+                            remainingNeeded: Math.max(0, targetInKnownWindow - assignedOff),
+                            unassignedCurrentMonthDays
+                        };
+                    };
+
+                    // Helper: Count public off (○) in the Sun-Sat week containing dateStr
+                    const getWeekPublicOffCount = (staffId, dateStr) => {
+                        const weekDates = getSunToSatWeekDates(dateStr);
+                        return weekDates.filter(ds => isPublicOffShift(rosterData[staffId]?.[ds])).length;
+                    };
+
+                    // Helper: Count current month nights (＜)
+                    const getMonthNightCount = (staffId) => {
+                        return curDays.filter(d => rosterData[staffId]?.[d.dateStr] === '＜').length;
+                    };
+
+                    // Helper: Count number of consecutive holiday blocks (2+ consecutive off days: ○, ◎, 年) in current month
+                    const getConsecutiveOffBlocksCount = (staffId) => {
+                        let blocks = 0;
+                        let streak = 0;
+                        for (let i = firstCurIdx - 1; i < firstCurIdx + curDays.length; i++) {
+                            if (i < 0) continue;
+                            const code = rosterData[staffId]?.[allDays[i].dateStr];
+                            if (isOffShift(code)) {
+                                streak++;
+                                if (streak === 2) blocks++; // Count each 2+ consecutive off block
+                            } else {
+                                streak = 0;
+                            }
+                        }
+                        return blocks;
+                    };
+
+                    // Helper: Count total off days (○ + ◎ + 年) in current month
+                    const getMonthTotalOffCount = (staffId) => {
+                        return curDays.filter(d => isOffShift(rosterData[staffId]?.[d.dateStr])).length;
+                    };
+
+                    // Step 3: JNA Standard 9 & Fairness - Ensure at least 1 full Weekend Off (Sat + Sun) distributed evenly across weeks
+                    if (autoGenConfig.ensureMonthlyWeekendOff) {
+                        const weekendPairs = [];
+                        for (let i = 0; i < curDays.length - 1; i++) {
+                            if (curDays[i].dayOfWeek === 6 && curDays[i + 1].dayOfWeek === 0) {
+                                weekendPairs.push({ satIdx: i, sunIdx: i + 1, assignedCount: 0 });
+                            }
+                        }
+                        if (weekendPairs.length > 0) {
+                            const eligibleForWeekend = activeNursingStaff.filter(s => !(autoGenConfig.headNurseWeekdayOnly && s.role === '看護師長'));
+                            eligibleForWeekend.forEach((s) => {
+                                const hasWeekendOff = weekendPairs.some(wp =>
+                                    isOffShift(rosterData[s.id]?.[curDays[wp.satIdx].dateStr]) &&
+                                    isOffShift(rosterData[s.id]?.[curDays[wp.sunIdx].dateStr])
+                                );
+                                if (!hasWeekendOff) {
+                                    // Pick the weekend pair that currently has the fewest staff on weekend off to keep daily staffing balanced
+                                    const availablePairs = weekendPairs.filter(wp => {
+                                        const satDay = curDays[wp.satIdx];
+                                        const sunDay = curDays[wp.sunIdx];
+                                        const prevFri = wp.satIdx > 0 ? curDays[wp.satIdx - 1] : null;
+                                        if (prevFri && rosterData[s.id]?.[prevFri.dateStr] === '＜') return false;
+                                        return !lockedCells[s.id][satDay.dateStr] && !lockedCells[s.id][sunDay.dateStr];
+                                    });
+                                    if (availablePairs.length > 0) {
+                                        availablePairs.sort((a, b) => a.assignedCount - b.assignedCount);
+                                        const chosenWp = availablePairs[0];
+                                        const satDay = curDays[chosenWp.satIdx];
+                                        const sunDay = curDays[chosenWp.sunIdx];
+                                        setShiftInCurrentMonth(s.id, satDay.dateStr, satDay.isHoliday ? '◎' : '○');
+                                        setShiftInCurrentMonth(s.id, sunDay.dateStr, sunDay.isHoliday ? '◎' : '○');
+                                        chosenWp.assignedCount++;
+                                    }
+                                }
+                            });
+                        }
+                    }
+
+                    // Step 4: Fair Night Shift Assignment Protocol (＜ -> ＞ -> ○)
+                    curDays.forEach((d, cIdx) => {
+                        const ds = d.dateStr;
+                        const allIdx = firstCurIdx + cIdx;
+                        const reqNight = (d.dayOfWeek === 0 || d.isHoliday)
+                            ? autoGenConfig.reqStaff.holiday.night
+                            : (d.dayOfWeek === 6 ? autoGenConfig.reqStaff.saturday.night : autoGenConfig.reqStaff.weekday.night);
+
+                        const currentNightStaff = activeNursingStaff.filter(s => rosterData[s.id]?.[ds] === '＜');
+                        let needed = reqNight - currentNightStaff.length;
+
+                        while (needed > 0) {
+                            const candidates = activeNursingStaff.filter(s => {
+                                if (s.canNight === false) return false;
+                                if (autoGenConfig.headNurseWeekdayOnly && s.role === '看護師長') return false;
+                                if (rosterData[s.id]?.[ds]) return false;
+
+                                const maxN = s.maxNightPerMonth ?? autoGenConfig.defaultMaxNightCount;
+                                if (getMonthNightCount(s.id) >= maxN) return false;
+
+                                // Tomorrow must be available for ＞
+                                if (cIdx + 1 < curDays.length) {
+                                    const nextDs = curDays[cIdx + 1].dateStr;
+                                    const nextExisting = rosterData[s.id]?.[nextDs];
+                                    if (nextExisting && nextExisting !== '＞') return false;
+                                }
+
+                                // JNA Standard 8: Rest days after post-night
+                                for (let r = 1; r <= autoGenConfig.restDaysAfterPostNight; r++) {
+                                    if (cIdx + 1 + r < curDays.length) {
+                                        const restDs = curDays[cIdx + 1 + r].dateStr;
+                                        if (lockedCells[s.id][restDs] && isWorkShift(rosterData[s.id][restDs])) return false;
+                                    }
+                                }
+
+                                // JNA Standard 4: Forbid consecutive night blocks
+                                const prevDs = allIdx > 0 ? allDays[allIdx - 1].dateStr : null;
+                                if (prevDs && rosterData[s.id]?.[prevDs] === '＞' && autoGenConfig.forbidConsecutiveNightBlocks) {
+                                    return false;
+                                }
+                                if (prevDs && rosterData[s.id]?.[prevDs] === '＜') return false;
+
+                                // JNA Standard 5: Consecutive work days limit (including lookahead after ＞)
+                                const consecAfterPost = (cIdx + 1 < curDays.length) ? getConsecWorkAfter(s.id, allIdx + 1) : 0;
+                                if (getConsecWorkBefore(s.id, allIdx) + 2 + consecAfterPost > rules.maxConsecutiveWorkDays) {
+                                    return false;
+                                }
+
+                                // Check max off interval if enabled
+                                if (autoGenConfig.enableMaxOffInterval) {
+                                    if (getDaysSinceLastPublicOff(s.id, allIdx) + 2 > autoGenConfig.maxOffIntervalDays) {
+                                        return false;
+                                    }
+                                }
+
+                                // Check NG Staff/Role Pairs
+                                if (autoGenConfig.balanceNightTeams) {
+                                    if (currentNightStaff.some(other => isPairViolatingScope(s, other, 'night'))) {
+                                        return false;
+                                    }
+                                }
+
+                                return true;
+                            });
+
+                            if (candidates.length === 0) break;
+
+                            // Fairness Protocol Sorting for Night Shifts:
+                            // 1. Lowest Night Shift ratio (currentNightCount / maxNightPerMonth) -> strict equalization of night counts
+                            // 2. Team Diversity (different team from already selected night partner)
+                            // 3. Longest interval since previous night shift (even spacing across the month)
+                            candidates.sort((a, b) => {
+                                const countA = getMonthNightCount(a.id);
+                                const countB = getMonthNightCount(b.id);
+                                if (countA !== countB) return countA - countB;
+
+                                if (autoGenConfig.balanceNightTeams && currentNightStaff.length > 0) {
+                                    const aSameTeam = currentNightStaff.some(o => o.teamName === a.teamName) ? 1 : 0;
+                                    const bSameTeam = currentNightStaff.some(o => o.teamName === b.teamName) ? 1 : 0;
+                                    if (aSameTeam !== bSameTeam) return aSameTeam - bSameTeam;
+                                }
+
+                                const gapA = getDaysSinceLastNight(a.id, allIdx);
+                                const gapB = getDaysSinceLastNight(b.id, allIdx);
+                                if (gapA !== gapB) return gapB - gapA; // Larger gap preferred
+
+                                return getConsecWorkBefore(a.id, allIdx) - getConsecWorkBefore(b.id, allIdx);
+                            });
+
+                            const chosen = candidates[0];
+                            setShiftInCurrentMonth(chosen.id, ds, '＜');
+                            currentNightStaff.push(chosen);
+
+                            if (cIdx + 1 < curDays.length) {
+                                const nextDs = curDays[cIdx + 1].dateStr;
+                                setShiftInCurrentMonth(chosen.id, nextDs, '＞');
+                            }
+
+                            for (let r = 1; r <= autoGenConfig.restDaysAfterPostNight; r++) {
+                                if (cIdx + 1 + r < curDays.length) {
+                                    const restDay = curDays[cIdx + 1 + r];
+                                    if (!rosterData[chosen.id][restDay.dateStr]) {
+                                        setShiftInCurrentMonth(chosen.id, restDay.dateStr, '○');
+                                    }
+                                }
+                            }
+
+                            needed--;
+                        }
+                    });
+
+                    // Step 5: Assign Day (‥), Mid (中), Holiday Off (◎), and 4-Week 8-Off Public Off (○) with Consecutive Off Fairness
+                    curDays.forEach((d, cIdx) => {
+                        const ds = d.dateStr;
+                        const allIdx = firstCurIdx + cIdx;
+                        const reqCfg = (d.dayOfWeek === 0 || d.isHoliday)
+                            ? autoGenConfig.reqStaff.holiday
+                            : (d.dayOfWeek === 6 ? autoGenConfig.reqStaff.saturday : autoGenConfig.reqStaff.weekday);
+
+                        // 5a: Force Public Off (○) if consecutive work days limit OR public off interval limit reached
+                        activeNursingStaff.forEach(s => {
+                            if (rosterData[s.id]?.[ds]) return;
+                            const consecBefore = getConsecWorkBefore(s.id, allIdx);
+                            const consecAfter = getConsecWorkAfter(s.id, allIdx);
+                            const projectedSpan = consecBefore + 1 + consecAfter;
+
+                            const intervalExceeded = autoGenConfig.enableMaxOffInterval &&
+                                (getDaysSinceLastPublicOff(s.id, allIdx) >= autoGenConfig.maxOffIntervalDays);
+
+                            if (consecBefore >= rules.maxConsecutiveWorkDays || projectedSpan > rules.maxConsecutiveWorkDays || intervalExceeded) {
+                                const stats4w = get4WeekPublicOffStats(s.id, ds);
+                                if (d.isHoliday && stats4w.remainingNeeded <= 0) {
+                                    setShiftInCurrentMonth(s.id, ds, '◎');
+                                } else {
+                                    setShiftInCurrentMonth(s.id, ds, '○');
+                                }
+                            }
+                        });
+
+                        // 5b: Assign Mid Shift (中) - Equalize Mid Shift Counts
+                        let currentMid = activeNursingStaff.filter(s => rosterData[s.id]?.[ds] === '中');
+                        let neededMid = reqCfg.mid - currentMid.length;
+                        while (neededMid > 0) {
+                            const midCandidates = activeNursingStaff.filter(s => {
+                                if (rosterData[s.id]?.[ds]) return false;
+                                if (autoGenConfig.headNurseWeekdayOnly && s.role === '看護師長') return false;
+                                if (autoGenConfig.enforceForwardRotation && cIdx + 1 < curDays.length) {
+                                    if (rosterData[s.id]?.[curDays[cIdx + 1].dateStr] === '‥') return false;
+                                }
+                                const st4w = get4WeekPublicOffStats(s.id, ds);
+                                if (st4w.unassignedCurrentMonthDays <= st4w.remainingNeeded) return false;
+                                return true;
+                            });
+                            if (midCandidates.length === 0) break;
+                            midCandidates.sort((a, b) => {
+                                const diffMid = getStaffCategoryCount(a.id, 'mid') - getStaffCategoryCount(b.id, 'mid');
+                                if (diffMid !== 0) return diffMid;
+                                return getConsecWorkBefore(a.id, allIdx) - getConsecWorkBefore(b.id, allIdx);
+                            });
+                            setShiftInCurrentMonth(midCandidates[0].id, ds, '中');
+                            neededMid--;
+                        }
+
+                        // 5c: Assign Day Shift (‥), Holiday Off (◎), and 4-Week Public Off (○) with Consecutive Off (連休) Equalization
+                        let currentDay = activeNursingStaff.filter(s => ['‥', '委', '研'].includes(rosterData[s.id]?.[ds]));
+                        let neededDay = reqCfg.day - currentDay.length;
+
+                        const unassigned = activeNursingStaff.filter(s => !rosterData[s.id]?.[ds]);
+
+                        // Calculate Work Priority Score (Higher = Better to work today; Lower = Should get Off today)
+                        const scoreWorkSuitability = (s) => {
+                            const st4w = get4WeekPublicOffStats(s.id, ds);
+                            if (st4w.unassignedCurrentMonthDays <= st4w.remainingNeeded && st4w.remainingNeeded > 0) {
+                                return -1000;
+                            }
+                            let score = 0;
+
+                            // 1. 4-week 8-off remaining quota pressure
+                            score -= (st4w.remainingNeeded * 16);
+
+                            // 2. Sunday-Saturday 2 public off soft target
+                            if (autoGenConfig.preferTwoOffPerWeek) {
+                                const weekOff = getWeekPublicOffCount(s.id, ds);
+                                if (weekOff < 2) score -= (2 - weekOff) * 22;
+                                else score += 20;
+                            }
+
+                            // 3. Fairness Protocol: Equalize Consecutive Off Blocks (連休の公平化)
+                            if (autoGenConfig.enforceFairness) {
+                                const prevDs = allIdx > 0 ? allDays[allIdx - 1].dateStr : null;
+                                const nextDs = (cIdx + 1 < curDays.length) ? curDays[cIdx + 1].dateStr : null;
+                                const prevIsOff = prevDs ? isOffShift(rosterData[s.id]?.[prevDs]) : false;
+                                const nextIsOff = nextDs ? isOffShift(rosterData[s.id]?.[nextDs]) : false;
+                                const prev2Ds = allIdx > 1 ? allDays[allIdx - 2].dateStr : null;
+                                const prev2IsOff = prev2Ds ? isOffShift(rosterData[s.id]?.[prev2Ds]) : false;
+
+                                const currentConsecBlocks = getConsecutiveOffBlocksCount(s.id);
+
+                                // If yesterday was a single off day (not yet a 2-day consecutive off), or tomorrow is off:
+                                // Giving off today creates a 2-day consecutive holiday!
+                                // Staff with fewer consecutive off blocks get a strong bonus to take today off (negative work score).
+                                if ((prevIsOff && !prev2IsOff) || nextIsOff) {
+                                    score -= Math.max(0, (3 - currentConsecBlocks)) * 28;
+                                }
+                                // Avoid excessive 3+ consecutive off days unless plenty of off quota remains
+                                if (prevIsOff && prev2IsOff) {
+                                    score += 35;
+                                }
+
+                                // Equalize total off days so far
+                                score += getMonthTotalOffCount(s.id) * 6;
+                            }
+
+                            // 4. Days since last public off
+                            score -= getDaysSinceLastPublicOff(s.id, allIdx) * 4;
+                            return score;
+                        };
+
+                        unassigned.sort((a, b) => scoreWorkSuitability(b) - scoreWorkSuitability(a));
+
+                        unassigned.forEach(s => {
+                            const prevDs = allIdx > 0 ? allDays[allIdx - 1].dateStr : null;
+                            const prevShift = prevDs ? rosterData[s.id]?.[prevDs] : '';
+                            const violatesForward = autoGenConfig.enforceForwardRotation && (prevShift === '中' || prevShift === '＞');
+                            const st4w = get4WeekPublicOffStats(s.id, ds);
+                            const mustTakeOffFor4W = st4w.remainingNeeded > 0 && st4w.unassignedCurrentMonthDays <= st4w.remainingNeeded;
+
+                            if (d.isHoliday) {
+                                if (neededDay > 0 && !violatesForward && !mustTakeOffFor4W) {
+                                    setShiftInCurrentMonth(s.id, ds, '‥');
+                                    neededDay--;
+                                } else {
+                                    setShiftInCurrentMonth(s.id, ds, '◎');
+                                }
+                            } else {
+                                if (mustTakeOffFor4W || violatesForward) {
+                                    setShiftInCurrentMonth(s.id, ds, '○');
+                                } else if (neededDay > 0) {
+                                    setShiftInCurrentMonth(s.id, ds, '‥');
+                                    neededDay--;
+                                } else if (st4w.remainingNeeded > 0) {
+                                    setShiftInCurrentMonth(s.id, ds, '○');
+                                } else {
+                                    setShiftInCurrentMonth(s.id, ds, '‥');
+                                }
+                            }
+                        });
+                    });
+
+                    // Step 6: Holiday Work Compensation (祝日勤務の振替『◎』付与) & 連休・公休バランスの最終調整
+                    const holidaysInMonth = curDays.filter(d => d.isHoliday);
+                    activeNursingStaff.forEach(s => {
+                        if (autoGenConfig.headNurseWeekdayOnly && s.role === '看護師長') return;
+
+                        // 6a: Enforce 4-week 8-off (○) balance where possible, prioritizing creating 2-day consecutive off blocks
+                        curDays.forEach((d, cIdx) => {
+                            const st4w = get4WeekPublicOffStats(s.id, d.dateStr);
+                            if (st4w.remainingNeeded > 0 && !d.isHoliday && !lockedCells[s.id][d.dateStr]) {
+                                if (rosterData[s.id][d.dateStr] === '‥') {
+                                    const dayCnt = getDailyShiftCount(d.dateStr, 'day');
+                                    const minReq = (d.dayOfWeek === 0) ? autoGenConfig.reqStaff.holiday.day : (d.dayOfWeek === 6 ? autoGenConfig.reqStaff.saturday.day : autoGenConfig.reqStaff.weekday.day);
+                                    if (dayCnt > minReq) {
+                                        setShiftInCurrentMonth(s.id, d.dateStr, '○');
+                                    }
+                                }
+                            }
+                        });
+
+                        // 6b: Compensate Holiday Work (祝日出勤の振替休日『◎』)
+                        if (autoGenConfig.compensateHolidayWork && holidaysInMonth.length > 0) {
+                            const workedHolidaysCount = holidaysInMonth.filter(hd => isWorkShift(rosterData[s.id]?.[hd.dateStr])).length;
+                            const existingCompensatoryHol = curDays.filter(d => !d.isHoliday && rosterData[s.id]?.[d.dateStr] === '◎').length;
+                            let compNeeded = workedHolidaysCount - existingCompensatoryHol;
+
+                            if (compNeeded > 0) {
+                                const compCandidates = curDays.filter((d) =>
+                                    !d.isHoliday &&
+                                    !lockedCells[s.id][d.dateStr] &&
+                                    rosterData[s.id][d.dateStr] === '‥'
+                                );
+                                // Sort candidates: prefer days adjacent to an existing off day (to form a fair 2-day consecutive off) and days with surplus day staff
+                                compCandidates.sort((a, b) => {
+                                    const aIdx = curDays.findIndex(x => x.dateStr === a.dateStr);
+                                    const bIdx = curDays.findIndex(x => x.dateStr === b.dateStr);
+                                    const aAdjOff = ((aIdx > 0 && isOffShift(rosterData[s.id]?.[curDays[aIdx - 1].dateStr])) || (aIdx + 1 < curDays.length && isOffShift(rosterData[s.id]?.[curDays[aIdx + 1].dateStr]))) ? 1 : 0;
+                                    const bAdjOff = ((bIdx > 0 && isOffShift(rosterData[s.id]?.[curDays[bIdx - 1].dateStr])) || (bIdx + 1 < curDays.length && isOffShift(rosterData[s.id]?.[curDays[bIdx + 1].dateStr]))) ? 1 : 0;
+                                    if (autoGenConfig.enforceFairness && aAdjOff !== bAdjOff) return bAdjOff - aAdjOff;
+                                    return getDailyShiftCount(b.dateStr, 'day') - getDailyShiftCount(a.dateStr, 'day');
+                                });
+                                for (const cd of compCandidates) {
+                                    if (compNeeded <= 0) break;
+                                    setShiftInCurrentMonth(s.id, cd.dateStr, '◎');
+                                    compNeeded--;
+                                }
+                            }
+                        }
+
+                        // 6c: Fairness Optimization Pass - Swap isolated Day/Off for staff with fewer consecutive off blocks if staffing allows
+                        if (autoGenConfig.enforceFairness && getConsecutiveOffBlocksCount(s.id) < 2) {
+                            for (let cIdx = 1; cIdx < curDays.length - 1; cIdx++) {
+                                const prevDs = curDays[cIdx - 1].dateStr;
+                                const curDs = curDays[cIdx].dateStr;
+                                if (isPublicOffShift(rosterData[s.id]?.[prevDs]) && rosterData[s.id]?.[curDs] === '‥' && !lockedCells[s.id][curDs] && !curDays[cIdx].isHoliday) {
+                                    const curDayCnt = getDailyShiftCount(curDs, 'day');
+                                    const curMinReq = (curDays[cIdx].dayOfWeek === 0) ? autoGenConfig.reqStaff.holiday.day : (curDays[cIdx].dayOfWeek === 6 ? autoGenConfig.reqStaff.saturday.day : autoGenConfig.reqStaff.weekday.day);
+                                    if (curDayCnt > curMinReq) {
+                                        // Find another isolated '○' in the same 4-week cycle to swap with '‥' so total ○ count remains unchanged
+                                        const { dates: cycleDates } = get4WeekCycleDates(curDs);
+                                        const swapTargetDs = curDays.find((otherD, oIdx) => {
+                                            if (Math.abs(oIdx - cIdx) <= 2) return false;
+                                            if (!cycleDates.includes(otherD.dateStr)) return false;
+                                            if (lockedCells[s.id][otherD.dateStr] || otherD.isHoliday) return false;
+                                            if (rosterData[s.id]?.[otherD.dateStr] !== '○') return false;
+                                            // Ensure it's an isolated '○' (not part of post-night rest or an existing 2-day off)
+                                            const oPrev = oIdx > 0 ? rosterData[s.id]?.[curDays[oIdx - 1].dateStr] : '';
+                                            const oNext = oIdx + 1 < curDays.length ? rosterData[s.id]?.[curDays[oIdx + 1].dateStr] : '';
+                                            if (oPrev === '＞' || isOffShift(oPrev) || isOffShift(oNext)) return false;
+                                            if (oNext === '＜') return false;
+                                            return true;
+                                        })?.dateStr;
+
+                                        if (swapTargetDs) {
+                                            setShiftInCurrentMonth(s.id, curDs, '○');
+                                            setShiftInCurrentMonth(s.id, swapTargetDs, '‥');
+                                            if (getConsecutiveOffBlocksCount(s.id) >= 2) break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    autoSave();
+                    showToast(`${currentMonth.value}月分を公平化プロトコルで自動生成しました（補助者は除外）`);
+                };
+
+                // Fiscal Year Aggregations
+                const selectedFiscalYear = ref(now.getMonth() + 1 >= 4 ? now.getFullYear() : now.getFullYear() - 1);
+                const selectedFiscalMetric = ref('total_work');
+                const fiscalMonths = computed(() => [...Array(9)].map((_,i)=>({year:selectedFiscalYear.value, month:i+4})).concat([...Array(3)].map((_,i)=>({year:selectedFiscalYear.value+1, month:i+1}))));
+                const getStaffMonthCount = (id, y, m, mKey) => {
+                    if (!rosterData[id]) return 0;
+                    let c = 0; const tot = new Date(y, m, 0).getDate();
+                    for(let d=1; d<=tot; d++) {
+                        const sym = getSymbolObj(rosterData[id][`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`]);
+                        if(!sym) continue;
+                        if (mKey === 'total_work' && ['day','mid','night','post_night','committee','training'].includes(sym.category)) c++;
+                        else if (sym.category === mKey || (mKey === 'off_pub' && sym.code === '○') || (mKey === 'off_paid' && sym.code === '年') || (mKey === 'off_hol' && sym.code === '◎')) c++;
+                    }
+                    return c;
+                };
+                const getStaffYearTotal = (id, y, mKey) => fiscalMonths.value.reduce((acc, m) => acc + getStaffMonthCount(id, m.year, m.month, mKey), 0);
+                
+                const exportFiscalSummaryCsv = () => {
+                    let csv = '\uFEFFNo,氏名,' + fiscalMonths.value.map(m => `${m.year}/${m.month}月`).join(',') + ',年間合計\r\n';
+                    staffList.forEach((s, idx) => {
+                        const row = [
+                            idx + 1,
+                            `"${s.name}"`,
+                            ...fiscalMonths.value.map(m => getStaffMonthCount(s.id, m.year, m.month, selectedFiscalMetric.value)),
+                            getStaffYearTotal(s.id, selectedFiscalYear.value, selectedFiscalMetric.value)
+                        ];
+                        csv += row.join(',') + '\r\n';
+                    });
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `年度集計_${selectedFiscalYear.value}年度_${currentRoomId.value}.csv`;
+                    link.click();
+                    showToast('年度集計CSVを出力しました');
+                };
+                const printRoster = () => window.print();
+
+                // Staff Management Helpers
+                const addNewStaffDirectly = () => { 
+                    staffList.push({ id: 'st_'+Date.now(), name: '新規看護師', teamName: 'pink', role: '看護師', initialLeaveDays: 20, canNight: true, maxNightPerMonth: 5 }); 
+                    autoSave(); 
+                    showToast('スタッフを追加しました');
+                };
+                const removeStaff = (id) => { 
+                    const i = staffList.findIndex(s => s.id === id); 
+                    if(i>-1) { staffList.splice(i, 1); autoSave(); showToast('スタッフを削除しました'); } 
+                };
+                const moveStaffUp = (i) => { if(i>0) { const t=staffList[i]; staffList[i]=staffList[i-1]; staffList[i-1]=t; autoSave(); } };
+                const moveStaffDown = (i) => { if(i<staffList.length-1) { const t=staffList[i]; staffList[i]=staffList[i+1]; staffList[i+1]=t; autoSave(); } };
+                
+                // Symbol and Rule Customizations
+                const addSymbol = () => { 
+                    symbols.push({ id: 's_'+Date.now(), code: '新', name: '新規', bg: '#e2e8f0', text: '#1e293b', category: 'day' }); 
+                    autoSave(); 
+                };
+                const removeSymbol = (id) => { const i = symbols.findIndex(s => s.id === id); if(i>-1) { symbols.splice(i, 1); autoSave(); } };
+                const moveSymbolUp = (i) => { if(i>0) { const t=symbols[i]; symbols[i]=symbols[i-1]; symbols[i-1]=t; autoSave(); } };
+                const moveSymbolDown = (i) => { if(i<symbols.length-1) { const t=symbols[i]; symbols[i]=symbols[i+1]; symbols[i+1]=t; autoSave(); } };
+                
+                const addNgCombo = () => { 
+                    const cb = newNgComboSymbols.slice(0, newNgComboLength.value).filter(x=>x); 
+                    if(cb.length === newNgComboLength.value) { 
+                        rules.ngCombos.push(cb); 
+                        autoSave(); 
+                        showToast('NGパターンを追加しました'); 
+                    } 
+                };
+                const removeNgCombo = (i) => { rules.ngCombos.splice(i, 1); autoSave(); };
+                const addStaffRule = () => { 
+                    if(newStaffRule.val1 && newStaffRule.val2) { 
+                        rules.staffNgPairs.push({...newStaffRule, id: 'sp_'+Date.now()}); 
+                        autoSave(); 
+                        showToast('NGペアを追加しました'); 
+                    } 
+                };
+                const removeStaffRule = (i) => { rules.staffNgPairs.splice(i, 1); autoSave(); };
+                const getComboSymbolName = (c) => groupOptions.find(g=>g.value===c)?.label || getSymbolObj(c)?.code || c;
+                
+                // Export and Import JSON / CSV
+                const exportData = () => {
+                    const dataStr = JSON.stringify({
+                        roomId: currentRoomId.value,
+                        staffList,
+                        symbols,
+                        rosterData,
+                        requestData,
+                        rules,
+                        autoGenConfig,
+                        cycleStartDate: cycleStartDate.value
+                    }, null, 2);
+                    const blob = new Blob([dataStr], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `勤務表_${currentRoomId.value}_${currentYear.value}年${currentMonth.value}月.json`;
+                    a.click();
+                    showToast('バックアップJSONを出力しました');
+                };
+
+                const importData = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const r = new FileReader();
+                    r.onload = (ev) => {
+                        try {
+                            const d = JSON.parse(ev.target.result);
+                            if (d.staffList) staffList.splice(0, staffList.length, ...d.staffList);
+                            if (d.symbols) symbols.splice(0, symbols.length, ...d.symbols);
+                            if (d.rosterData) { Object.keys(rosterData).forEach(k => delete rosterData[k]); Object.assign(rosterData, d.rosterData); }
+                            if (d.requestData) { Object.keys(requestData).forEach(k => delete requestData[k]); Object.assign(requestData, d.requestData); }
+                            if (d.rules) Object.assign(rules, d.rules);
+                            if (d.cycleStartDate) cycleStartDate.value = d.cycleStartDate;
+                            autoSave();
+                            showToast('データを正常に読み込みました');
+                        } catch (err) {
+                            showToast('JSONファイルの形式が正しくありません');
+                        }
+                    };
+                    r.readAsText(file);
+                };
+
+                const exportStaffCsv = () => {
+                    let csv = '\uFEFF氏名,チーム,役職,4/1年休\r\n';
+                    staffList.forEach(s => {
+                        csv += `"${s.name}","${s.teamName}","${s.role}",${s.initialLeaveDays ?? 20}\r\n`;
+                    });
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `スタッフ一覧_${currentRoomId.value}.csv`;
+                    link.click();
+                    showToast('スタッフCSVを出力しました');
+                };
+
+                const importStaffCsv = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const r = new FileReader();
+                    r.onload = (ev) => {
+                        try {
+                            const lines = ev.target.result.split(/\r\n|\n/);
+                            let cnt = 0;
+                            lines.forEach((line, idx) => {
+                                if (idx === 0 && line.includes('氏名')) return;
+                                const cols = line.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+                                if (cols[0]) {
+                                    staffList.push({
+                                        id: 'st_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                                        name: cols[0],
+                                        teamName: cols[1] || 'pink',
+                                        role: cols[2] || '看護師',
+                                        initialLeaveDays: parseFloat(cols[3]) || 20
+                                    });
+                                    cnt++;
+                                }
+                            });
+                            autoSave();
+                            showToast(`${cnt}名のスタッフをインポートしました`);
+                        } catch(err) {
+                            showToast('CSV読込に失敗しました');
+                        }
+                    };
+                    r.readAsText(file);
+                };
+
+                onMounted(() => {
+                    onRoomChanged();
+                    // Global drag cancel event listener
+                    window.addEventListener('mouseup', stopPaint);
+                    window.addEventListener('touchend', stopPaint);
+                });
+
+                return {
+                    activeTab, isSettingsDropdownOpen, notificationMessage, currentRoomId, currentYear, currentMonth, isRuleCheckActive, isPaintModeEnabled, selectedSymbol, selectedRequestSymbol, cycleStartDate, showFloatingStamp, floatingPos, confirmDialog, hoverTooltip, teamColors, symbols, requestPresetSymbols, staffList, rosterData, requestData, rules, autoGenConfig, applyJnaStandardPreset, newNgComboLength, newNgComboSymbols, newStaffRule, groupOptions,
+                    daysInMonth, ruleViolations, violationCount, dailyStaffList, dailyViolationsTotalCount, selectedFiscalYear, selectedFiscalMetric, fiscalMonths,
+                    toggleSettingsDropdown, selectTabFromMenu, closeDropdowns, showToast, changeMonth, onRoomChanged, manualSave, autoSave, resetToDefaultData, exportData, importData, exportStaffCsv, importStaffCsv, exportFiscalSummaryCsv, getTeamColor, getSymbolObj, getSymbolStyle, getRequestSymbolStyle, isMismatch, getComboSymbolName, getShiftScopeLabel, getStaffNameById, cellClicked, cellDblClicked, requestCellClicked, requestCellDblClicked, startPaint, onCellMouseEnter, stopPaint, selectSymbol, getRosterSymbol, getRequestSymbol, getStaffCategoryCount, getDailyShiftCount, getStaffRequestCount, getStaffMonthCount, getStaffYearTotal, getTargetFiscalYear, getPriorUsedLeaveDays, getStaffLeaveInfo, askClearRoster, askClearRequests, executeConfirmAction, syncRequestsToRoster, autoGenerateSchedule, printRoster, startDrag, stopDrag, addNewStaffDirectly, removeStaff, moveStaffUp, moveStaffDown, addSymbol, removeSymbol, moveSymbolUp, moveSymbolDown, addNgCombo, removeNgCombo, addStaffRule, removeStaffRule, showStaffTooltip, hideStaffTooltip
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
