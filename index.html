@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Vue 3 (Multi-CDN High Reliability Fallback) -->
+    <!-- Vue 3 -->
     <script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"></script>
     <script>
         if (!window.Vue) {
@@ -28,9 +28,9 @@
 
         /* Responsive Fixed Header Columns (Z-index updated for scrolling overlap fix) */
         .sticky-col-idx { position: sticky; left: 0px; z-index: 30; width: 34px; min-width: 34px; }
-        .sticky-col-name { position: sticky; left: 34px; z-index: 30; width: 105px; min-width: 105px; }
-        .sticky-col-team { position: sticky; left: 139px; z-index: 30; width: 30px; min-width: 30px; }
-        .sticky-col-role { position: sticky; left: 169px; z-index: 30; width: 84px; min-width: 84px; }
+        .sticky-col-name { position: sticky; left: 34px; z-index: 30; width: 110px; min-width: 110px; }
+        .sticky-col-team { position: sticky; left: 144px; z-index: 30; width: 30px; min-width: 30px; }
+        .sticky-col-role { position: sticky; left: 174px; z-index: 30; width: 84px; min-width: 84px; }
 
         @media (max-width: 640px) {
             .sticky-col-idx { width: 28px; min-width: 28px; }
@@ -91,6 +91,47 @@
                     <div class="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
                         <button @click="confirmDialog.show = false" class="px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition">キャンセル</button>
                         <button @click="executeConfirmAction" class="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-md transition">全消去を実行</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Alert Modal -->
+        <transition name="fade">
+            <div v-if="alertDialog.show" class="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm no-print">
+                <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 max-w-md w-full space-y-4" @click.stop>
+                    <div class="flex items-start space-x-3 text-indigo-600">
+                        <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center shrink-0 mt-0.5">
+                            <i class="fa-solid fa-circle-info text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-extrabold text-slate-800 text-sm sm:text-base">{{ alertDialog.title }}</h3>
+                            <p class="text-xs text-slate-600 mt-1 whitespace-pre-wrap leading-relaxed">{{ alertDialog.message }}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-end pt-2 border-t border-slate-100">
+                        <button @click="alertDialog.show = false" class="px-4 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md transition">確認</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Auto Load Confirmation Modal -->
+        <transition name="fade">
+            <div v-if="autoLoadDialog.show" class="fixed inset-0 z-[9500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm no-print">
+                <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 max-w-sm w-full space-y-4" @click.stop>
+                    <div class="flex items-center space-x-3 text-emerald-600">
+                        <div class="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                            <i class="fa-solid fa-folder-open text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-extrabold text-slate-800 text-sm sm:text-base">設定ファイルの自動読み込み</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">同じフォルダに「roster_data.json」が見つかりました。読み込みますか？</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                        <button @click="autoLoadDialog.show = false" class="px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition">キャンセル</button>
+                        <button @click="executeAutoLoad" class="px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md transition">読み込む</button>
                     </div>
                 </div>
             </div>
@@ -189,7 +230,7 @@
                     <div class="flex items-center space-x-1">
                         <button @click="manualSave" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold transition flex items-center shadow-sm text-xs"><i class="fa-solid fa-floppy-disk mr-1"></i>保存</button>
                         <button @click="exportData" class="px-2 py-1 bg-indigo-800 hover:bg-indigo-700 text-indigo-100 rounded-lg text-xs transition flex items-center"><i class="fa-solid fa-download mr-1"></i>JSON</button>
-                        <label class="px-2 py-1 bg-indigo-800 hover:bg-indigo-700 text-indigo-100 rounded-lg text-xs transition flex items-center cursor-pointer"><i class="fa-solid fa-upload mr-1"></i>読込<input type="file" @change="importData" accept=".json" class="hidden"></label>
+                        <label class="px-2 py-1 bg-indigo-800 hover:bg-indigo-700 text-indigo-100 rounded-lg text-xs transition flex items-center cursor-pointer"><i class="fa-solid fa-upload mr-1"></i>読込<input type="file" @change="importDataFile" accept=".json" class="hidden"></label>
                         <button @click="resetToDefaultData" class="px-2 py-1 bg-rose-900/80 hover:bg-rose-800 text-rose-200 rounded-lg text-xs transition flex items-center" title="ブラウザの保存データをリセット"><i class="fa-solid fa-rotate-left"></i></button>
                     </div>
                 </div>
@@ -1122,6 +1163,7 @@
 
                 const confirmDialog = reactive({ show: false, title: '', message: '', action: null });
                 const alertDialog = reactive({ show: false, title: '', message: '' });
+                const autoLoadDialog = reactive({ show: false, data: null });
                 const hoverTooltip = reactive({ show: false, x: 0, y: 0, staff: null });
 
                 const teamColors = reactive({
@@ -1309,6 +1351,7 @@
                     const dt = new Date(y, m - 1, parseInt(d) + 1); 
                     return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; 
                 };
+
                 const applyStamp = (id, dStr) => {
                     if (!rosterData[id]) rosterData[id] = {};
                     if (selectedSymbol.value === '＜＞') { 
@@ -1321,24 +1364,35 @@
                     }
                     autoSave();
                 };
+
+                // Mouse Input Handlers
                 const startPaint = (e, id, ds) => { 
+                    // Prevent secondary mouse buttons
                     if (e && e.button !== undefined && e.button !== 0) return;
                     if (isPaintModeEnabled.value) {
-                        if (e && e.cancelable) e.preventDefault();
                         isPainting.value = true;
                     }
+                    // Apply stamp whether in paint mode or just a single click
                     applyStamp(id, ds); 
                 };
+
                 const onCellMouseEnter = (e, id, ds) => { 
                     if (!isPaintModeEnabled.value || !isPainting.value) return;
+                    // Detect if user released mouse outside of the window
                     if (e && e.buttons !== undefined && e.buttons !== 1) {
                         isPainting.value = false;
                         return;
                     }
                     applyStamp(id, ds); 
                 };
+
                 const stopPaint = () => { isPainting.value = false; };
-                const cellClicked = (id, ds) => { if (!isPaintModeEnabled.value) { applyStamp(id, ds); } };
+                
+                const cellClicked = (id, ds) => {
+                    // startPaint covers the initial click, this prevents double triggering unless it's a touch device
+                    // We let startPaint handle the actual logic for desktop.
+                };
+
                 const cellDblClicked = (id, ds) => { if (rosterData[id]) { delete rosterData[id][ds]; autoSave(); } };
                 const requestCellClicked = (id, ds) => { 
                     if (!requestData[id]) requestData[id] = {}; 
@@ -1522,40 +1576,41 @@
                     } catch(e) { console.error(e); }
                 };
 
+                const applyImportedData = (d) => {
+                    if (d.staffList) staffList.splice(0, staffList.length, ...d.staffList.map(st => ({
+                        canNight: st.role !== '看護師長' && st.role !== '補助者',
+                        canMid: st.canMid !== false,
+                        maxNightPerMonth: (st.role === '看護師長' || st.role === '補助者') ? 0 : 5,
+                        teamName: st.teamName || 'none',
+                        ...st
+                    })));
+                    if (d.symbols) symbols.splice(0, symbols.length, ...d.symbols);
+                    if (d.rosterData) { Object.keys(rosterData).forEach(k => delete rosterData[k]); Object.assign(rosterData, d.rosterData); }
+                    if (d.requestData) { Object.keys(requestData).forEach(k => delete requestData[k]); Object.assign(requestData, d.requestData); }
+                    if (d.rules) {
+                        Object.assign(rules, d.rules);
+                        if (!rules.shiftRestrictions) rules.shiftRestrictions = [];
+                    }
+                    if (d.autoGenConfig) {
+                        Object.assign(autoGenConfig, JSON.parse(JSON.stringify(defaultAutoGenConfig)), d.autoGenConfig);
+                        if (d.autoGenConfig.reqStaff) {
+                            autoGenConfig.reqStaff = {
+                                ...defaultAutoGenConfig.reqStaff,
+                                ...d.autoGenConfig.reqStaff,
+                                weekday: { ...defaultAutoGenConfig.reqStaff.weekday, ...(d.autoGenConfig.reqStaff.weekday || {}) },
+                                saturday: { ...defaultAutoGenConfig.reqStaff.saturday, ...(d.autoGenConfig.reqStaff.saturday || {}) },
+                                holiday: { ...defaultAutoGenConfig.reqStaff.holiday, ...(d.autoGenConfig.reqStaff.holiday || {}) }
+                            };
+                        }
+                    }
+                    if (d.cycleStartDate) cycleStartDate.value = d.cycleStartDate;
+                };
+
                 const onRoomChanged = () => {
                     try {
                         const sv = localStorage.getItem(`nurse_app_data_${currentRoomId.value}`);
                         if (sv) {
-                            const d = JSON.parse(sv);
-                            if (d && Array.isArray(d.staffList)) {
-                                staffList.splice(0, staffList.length, ...d.staffList.map(st => ({
-                                    canNight: st.role !== '看護師長' && st.role !== '補助者',
-                                    canMid: st.canMid !== false,
-                                    maxNightPerMonth: (st.role === '看護師長' || st.role === '補助者') ? 0 : 5,
-                                    teamName: st.teamName || 'none',
-                                    ...st
-                                })));
-                            }
-                            if (d && Array.isArray(d.symbols)) symbols.splice(0, symbols.length, ...d.symbols);
-                            if (d && d.rosterData) { Object.keys(rosterData).forEach(k => delete rosterData[k]); Object.assign(rosterData, d.rosterData); }
-                            if (d && d.requestData) { Object.keys(requestData).forEach(k => delete requestData[k]); Object.assign(requestData, d.requestData); }
-                            if (d && d.rules) {
-                                Object.assign(rules, d.rules);
-                                if (!rules.shiftRestrictions) rules.shiftRestrictions = [];
-                            }
-                            if (d && d.autoGenConfig) {
-                                Object.assign(autoGenConfig, JSON.parse(JSON.stringify(defaultAutoGenConfig)), d.autoGenConfig);
-                                if (d.autoGenConfig.reqStaff) {
-                                    autoGenConfig.reqStaff = {
-                                        ...defaultAutoGenConfig.reqStaff,
-                                        ...d.autoGenConfig.reqStaff,
-                                        weekday: { ...defaultAutoGenConfig.reqStaff.weekday, ...(d.autoGenConfig.reqStaff.weekday || {}) },
-                                        saturday: { ...defaultAutoGenConfig.reqStaff.saturday, ...(d.autoGenConfig.reqStaff.saturday || {}) },
-                                        holiday: { ...defaultAutoGenConfig.reqStaff.holiday, ...(d.autoGenConfig.reqStaff.holiday || {}) }
-                                    };
-                                }
-                            }
-                            if (d && d.cycleStartDate) cycleStartDate.value = d.cycleStartDate;
+                            applyImportedData(JSON.parse(sv));
                             showToast('データを読み込みました');
                         } else {
                             showToast('新規病棟に切り替えました');
@@ -2193,23 +2248,16 @@
                     showToast('バックアップJSONを出力しました');
                 };
 
-                const importData = (e) => {
+                const importDataFile = (e) => {
                     const file = e.target.files[0];
                     if (!file) return;
                     const r = new FileReader();
                     r.onload = (ev) => {
                         try {
                             const d = JSON.parse(ev.target.result);
-                            if (d.staffList) staffList.splice(0, staffList.length, ...d.staffList);
-                            if (d.symbols) symbols.splice(0, symbols.length, ...d.symbols);
-                            if (d.rosterData) { Object.keys(rosterData).forEach(k => delete rosterData[k]); Object.assign(rosterData, d.rosterData); }
-                            if (d.requestData) { Object.keys(requestData).forEach(k => delete requestData[k]); Object.assign(requestData, d.requestData); }
-                            if (d.rules) {
-                                Object.assign(rules, d.rules);
-                                if (!rules.shiftRestrictions) rules.shiftRestrictions = [];
-                            }
-                            if (d.cycleStartDate) cycleStartDate.value = d.cycleStartDate;
-                            autoSave(); showToast('データを正常に読み込みました');
+                            applyImportedData(d);
+                            autoSave();
+                            showToast('データを正常に読み込みました');
                         } catch (err) { showToast('JSONファイルの形式が正しくありません'); }
                     };
                     r.readAsText(file);
@@ -2261,18 +2309,46 @@
                     r.readAsText(file, 'UTF-8');
                 };
 
+                // Check for local auto-load JSON (Works on local servers like Live Server)
+                const checkAutoLoad = async () => {
+                    try {
+                        const response = await fetch('roster_data.json');
+                        if (response.ok) {
+                            const data = await response.json();
+                            autoLoadDialog.data = data;
+                            autoLoadDialog.show = true;
+                        }
+                    } catch (e) {
+                        // Silently fail if blocked by browser file:// restrictions or file not found
+                        console.log('ローカルファイルの自動読み込みはスキップされました（ファイルが無いか、アクセス制限のため）');
+                    }
+                };
+
+                const executeAutoLoad = () => {
+                    if (autoLoadDialog.data) {
+                        applyImportedData(autoLoadDialog.data);
+                        autoSave();
+                        showToast('設定ファイル（roster_data.json）を読み込みました');
+                    }
+                    autoLoadDialog.show = false;
+                };
+
                 onMounted(() => {
                     onRoomChanged();
                     window.addEventListener('mouseup', stopPaint);
                     window.addEventListener('touchend', stopPaint);
+                    
+                    // Check for auto-load json in the background
+                    checkAutoLoad();
+
                     // Fade in safely
                     setTimeout(() => { isReady.value = true; }, 100);
                 });
 
                 return {
-                    isReady, activeTab, isSettingsDropdownOpen, notificationMessage, currentRoomId, currentYear, currentMonth, isRuleCheckActive, isPaintModeEnabled, selectedSymbol, selectedRequestSymbol, cycleStartDate, showFloatingStamp, floatingPos, confirmDialog, alertDialog, hoverTooltip, teamColors, symbols, requestPresetSymbols, staffList, rosterData, requestData, rules, autoGenConfig, applyJnaStandardPreset, newNgComboLength, newNgComboSymbols, newStaffRule, newShiftRestriction, groupOptions,
+                    isReady, activeTab, isSettingsDropdownOpen, notificationMessage, currentRoomId, currentYear, currentMonth, isRuleCheckActive, isPaintModeEnabled, selectedSymbol, selectedRequestSymbol, cycleStartDate, showFloatingStamp, floatingPos, confirmDialog, alertDialog, autoLoadDialog, hoverTooltip, teamColors, symbols, requestPresetSymbols, staffList, rosterData, requestData, rules, autoGenConfig, applyJnaStandardPreset, newNgComboLength, newNgComboSymbols, newStaffRule, newShiftRestriction, groupOptions,
                     daysInMonth, ruleViolations, violationCount, dailyStaffList, dailyViolationsTotalCount, selectedFiscalYear, selectedFiscalMetric, fiscalMonths,
-                    toggleSettingsDropdown, selectTabFromMenu, closeDropdowns, showToast, showAlert, changeMonth, onRoomChanged, manualSave, autoSave, resetToDefaultData, exportData, importData, exportStaffCsv, importStaffCsv, exportFiscalSummaryCsv, getTeamColor, getSymbolObj, getSymbolStyle, getRequestSymbolStyle, isMismatch, getComboSymbolName, getShiftScopeLabel, getShiftRestrictionLabel, getStaffNameById, cellClicked, cellDblClicked, requestCellClicked, requestCellDblClicked, startPaint, onCellMouseEnter, stopPaint, selectSymbol, getRosterSymbol, getRequestSymbol, getStaffCategoryCount, getDailyShiftCount, getStaffRequestCount, getStaffHolidayBlockCount, getStaffMonthCount, getStaffYearTotal, getTargetFiscalYear, getPriorUsedLeaveDays, getStaffLeaveInfo, askClearRoster, askClearRequests, executeConfirmAction, syncRequestsToRoster, autoGenerateSchedule, printRoster, startDrag, stopDrag, addNewStaffDirectly, removeStaff, moveStaffUp, moveStaffDown, jumpStaffIndex, sortStaffByRole, addSymbol, removeSymbol, moveSymbolUp, moveSymbolDown, addNgCombo, removeNgCombo, addStaffRule, removeStaffRule, addShiftRestriction, removeShiftRestriction, showStaffTooltip, hideStaffTooltip,
+                    toggleSettingsDropdown, selectTabFromMenu, closeDropdowns, showToast, showAlert, changeMonth, onRoomChanged, manualSave, autoSave, resetToDefaultData, exportData, importDataFile, exportStaffCsv, importStaffCsv, exportFiscalSummaryCsv, getTeamColor, getSymbolObj, getSymbolStyle, getRequestSymbolStyle, isMismatch, getComboSymbolName, getShiftScopeLabel, getShiftRestrictionLabel, getStaffNameById, cellClicked, cellDblClicked, requestCellClicked, requestCellDblClicked, startPaint, onCellMouseEnter, stopPaint, selectSymbol, getRosterSymbol, getRequestSymbol, getStaffCategoryCount, getDailyShiftCount, getStaffRequestCount, getStaffHolidayBlockCount, getStaffMonthCount, getStaffYearTotal, getTargetFiscalYear, getPriorUsedLeaveDays, getStaffLeaveInfo, askClearRoster, askClearRequests, executeConfirmAction, executeAutoLoad, syncRequestsToRoster, autoGenerateSchedule, printRoster, startDrag, stopDrag, addNewStaffDirectly, removeStaff, moveStaffUp, moveStaffDown, jumpStaffIndex, sortStaffByRole, addSymbol, removeSymbol, moveSymbolUp, moveSymbolDown, addNgCombo, removeNgCombo, addStaffRule, removeStaffRule, addShiftRestriction, removeShiftRestriction, showStaffTooltip, hideStaffTooltip,
                     getDayShiftClass, getNightShiftClass
                 };
             }
